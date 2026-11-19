@@ -51,7 +51,8 @@ export function clip(text: string, maxWidth: number): string {
   let out = '';
   for (const ch of text) {
     const w = /[ᄀ-ᇿ　-鿿가-힯＀-￯]/.test(ch) ? 2 : 1;
-    if (width + w > maxWidth) return out.trimEnd() + '…';
+    // '…' (U+2026) is not in the G2 font and would be silently dropped.
+    if (width + w > maxWidth) return out.trimEnd() + '..';
     width += w;
     out += ch;
   }

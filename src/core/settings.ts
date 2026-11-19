@@ -1,6 +1,8 @@
-import type { GeoPoint, Layout, Mode } from './types';
+import type { GeoPoint, Layout, Mode, Theme } from './types';
 
 export interface Settings {
+  /** 'hud': gauge + timeline images with bordered panels. 'classic': three plain text lines. */
+  theme: Theme;
   /** Where the HUD sits in the field of view. */
   position: 'top' | 'bottom';
   /** Base brightness (0-4) of normal lines. Urgent lines are always 4. */
@@ -48,7 +50,20 @@ export const DEFAULT_LAYOUTS: Record<Mode, Layout> = {
   evening: { top: ['clock', 'weather', 'battery'], main: ['today', 'tracker'], sub: ['tomorrow'] },
 };
 
+/**
+ * HUD theme: time, date and battery live in the gauge image, so the text lines
+ * carry a mode code plus the most relevant context instead.
+ */
+export const HUD_LAYOUTS: Record<Mode, Layout> = {
+  default: { top: ['mode', 'weather', 'air'], main: ['calendar'], sub: ['focus'] },
+  commute: { top: ['mode', 'weather'], main: ['transit'], sub: ['calendar'] },
+  work: { top: ['mode', 'dev'], main: ['focus'], sub: ['calendar'] },
+  workout: { top: ['mode', 'air'], main: ['workout'], sub: ['weather'] },
+  evening: { top: ['mode', 'weather'], main: ['today', 'tracker'], sub: ['tomorrow'] },
+};
+
 export const DEFAULT_SETTINGS: Settings = {
+  theme: 'hud',
   position: 'top',
   brightness: 2,
   fallbackLocation: { lat: 37.5663, lon: 126.9779 },
@@ -66,7 +81,7 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 export function layoutFor(settings: Settings, mode: Mode): Layout {
-  return settings.layouts[mode] ?? DEFAULT_LAYOUTS[mode];
+  return settings.layouts[mode] ?? (settings.theme === 'hud' ? HUD_LAYOUTS : DEFAULT_LAYOUTS)[mode];
 }
 
 /** Deep-merge stored (possibly older/partial) settings over the defaults. */

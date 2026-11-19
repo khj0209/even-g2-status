@@ -2,6 +2,9 @@ import {
   AppLocationAccuracy,
   CreateStartUpPageContainer,
   DeviceConnectType,
+  ImageContainerProperty,
+  ImageRawDataUpdate,
+  ImageRawDataUpdateResult,
   MenuContainerProperty,
   MenuItemProperty,
   OsEventTypeList,
@@ -14,7 +17,7 @@ import {
   type EvenHubEvent,
 } from '@evenrealities/even_hub_sdk';
 import type { DeviceState, InputAction } from '../core/types';
-import type { Host, MenuItem, TextBox } from './host';
+import type { Host, MenuItem, Page } from './host';
 
 /** True when running inside the Even App WebView. */
 export function isEvenApp(): boolean {
@@ -34,6 +37,47 @@ export function toInputAction(event: EvenHubEvent): InputAction | null {
   }
 }
 
+/**
+ * Page + menu as Even Hub SDK containers. zOrderIndex is all-or-none per page;
+ * images go underneath the text panels. Exported so tests can run the SDK's
+ * own validator on exactly what gets sent.
+ */
+export function sdkPageFields(page: Page, menu: MenuItem[]) {
+  let z = 1;
+  return {
+    containerTotalNum: page.texts.length + page.images.length,
+    imageObject: page.images.map((b) => new ImageContainerProperty({
+      xPosition: b.x,
+      yPosition: b.y,
+      width: b.width,
+      height: b.height,
+      containerID: b.id,
+      containerName: b.name,
+      zOrderIndex: z++,
+    })),
+    textObject: page.texts.map((b) => new TextContainerProperty({
+      xPosition: b.x,
+      yPosition: b.y,
+      width: b.width,
+      height: b.height,
+      borderWidth: b.border?.width ?? 0,
+      ...(b.border ? { borderColor: b.border.color, borderRadius: b.border.radius } : {}),
+      paddingLength: b.padding ?? 4,
+      containerID: b.id,
+      containerName: b.name,
+      zOrderIndex: z++,
+      content: b.content,
+      textColor: b.brightness,
+      isEventCapture: b.captureEvents ? 1 : 0,
+    })),
+    menuObject: menu.length
+      ? new MenuContainerProperty({
+        menuItems: menu.map((m) => new MenuItemProperty({ itemID: m.id, itemName: m.label })),
+      })
+      : undefined,
+  };
+}
+
 // The host may deliver the click on the capturing text container *and* as a
 // sysEvent. Collapse identical actions arriving within a short window.
 const DEDUPE_MS = 150;
@@ -45,29 +89,8 @@ export async function createEvenHost(): Promise<Host> {
   return {
     kind: 'glasses',
 
-    async createPage(boxes: TextBox[], menu: MenuItem[]) {
-      const fields = {
-        containerTotalNum: boxes.length,
-        textObject: boxes.map((b, i) => new TextContainerProperty({
-          xPosition: b.x,
-          yPosition: b.y,
-          width: b.width,
-          height: b.height,
-          borderWidth: 0,
-          paddingLength: 4,
-          containerID: b.id,
-          containerName: b.name,
-          zOrderIndex: i + 1,
-          content: b.content,
-          textColor: b.brightness,
-          isEventCapture: b.captureEvents ? 1 : 0,
-        })),
-        menuObject: menu.length
-          ? new MenuContainerProperty({
-            menuItems: menu.map((m) => new MenuItemProperty({ itemID: m.id, itemName: m.label })),
-          })
-          : undefined,
-      };
+    async createPage(page: Page, menu: MenuItem[]) {
+      const fields = sdkPageFields(page, menu);
       if (!pageCreated) {
         const result = await bridge.createStartUpPageContainer(new CreateStartUpPageContainer(fields));
         pageCreated = result === StartUpPageCreateResult.success;
@@ -84,6 +107,16 @@ export async function createEvenHost(): Promise<Host> {
         content,
         ...(brightness !== undefined ? { textColor: brightness } : {}),
       }));
+    },
+
+    async updateImage(box, png) {
+      const result = await bridge.updateImageRawData(new ImageRawDataUpdate({
+        containerID: box.id,
+        containerName: box.name,
+        imageData: Array.from(png),
+      }));
+      if (result !== ImageRawDataUpdateResult.success) console.warn(`updateImageRawData ${box.name}:`, result);
+      return result === ImageRawDataUpdateResult.success;
     },
 
     onInput(cb) {

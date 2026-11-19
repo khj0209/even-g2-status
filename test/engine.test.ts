@@ -1,28 +1,33 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   CreateStartUpPageContainer,
-  MenuContainerProperty,
-  MenuItemProperty,
-  TextContainerProperty,
   isMenuNameWithinLimit,
   validateEvenHubPageContainer,
 } from '@evenrealities/even_hub_sdk';
 import { SETTINGS_KEY, STATE_KEY, StatusEngine } from '../src/core/engine';
 import { DEFAULT_SETTINGS } from '../src/core/settings';
 import type { DeviceState, InputAction } from '../src/core/types';
-import { BOX_ID, buildBoxes, MENU, MenuId } from '../src/glasses/layout';
-import type { Host, MenuItem, TextBox } from '../src/platform/host';
+import type { HudRenderer } from '../src/glasses/draw';
+import { BOX_ID, buildPage, IMAGE, MENU, MenuId } from '../src/glasses/layout';
+import { sdkPageFields } from '../src/platform/evenHost';
+import type { Host, MenuItem, Page } from '../src/platform/host';
 
 class FakeHost implements Host {
   kind = 'preview' as const;
-  boxes: TextBox[] = [];
+  page: Page = { texts: [], images: [] };
   menu: MenuItem[] = [];
   updates: { id: number; content: string; brightness?: number }[] = [];
+  images: { id: number; png: string }[] = [];
+  imageOk = true;
   storage = new Map<string, string>();
   input?: (a: InputAction) => void;
   device?: (s: DeviceState) => void;
 
-  async createPage(boxes: TextBox[], menu: MenuItem[]) { this.boxes = boxes; this.menu = menu; return true; }
+  async createPage(page: Page, menu: MenuItem[]) { this.page = page; this.menu = menu; return true; }
+  async updateImage(box: { id: number }, png: Uint8Array) {
+    this.images.push({ id: box.id, png: new TextDecoder().decode(png) });
+    return this.imageOk;
+  }
   async updateText(box: { id: number }, content: string, brightness?: number) {
     this.updates.push({ id: box.id, content, brightness });
     return true;
@@ -40,7 +45,14 @@ class FakeHost implements Host {
 
 const offline = (() => Promise.reject(new Error('offline'))) as unknown as typeof fetch;
 
-describe('StatusEngine', () => {
+/** Fake renderer: the "PNG" is the model as JSON, so tests can read what was drawn. */
+const fakeRenderer: HudRenderer = {
+  gauge: async (m) => new TextEncoder().encode(JSON.stringify({ kind: 'gauge', ...m })),
+  timeline: async (m) => new TextEncoder().encode(JSON.stringify({ kind: 'timeline', ...m })),
+  blank: async () => new TextEncoder().encode('{"kind":"blank"}'),
+};
+
+describe('StatusEngine (classic theme)', () => {
   let host: FakeHost;
   let clock: Date;
   let engine: StatusEngine;
@@ -48,7 +60,7 @@ describe('StatusEngine', () => {
   beforeEach(async () => {
     host = new FakeHost();
     clock = new Date(2026, 10, 19, 14, 32); // Thursday, work hours
-    host.storage.set(SETTINGS_KEY, JSON.stringify({ ...DEFAULT_SETTINGS, calendar: { ...DEFAULT_SETTINGS.calendar, manual: '2026-11-19 15:00 디자인 리뷰' } }));
+    host.storage.set(SETTINGS_KEY, JSON.stringify({ ...DEFAULT_SETTINGS, theme: 'classic', calendar: { ...DEFAULT_SETTINGS.calendar, manual: '2026-11-19 15:00 디자인 리뷰' } }));
     host.storage.set(STATE_KEY, JSON.stringify({ todos: [{ id: '1', text: '보고서 초안', done: false }] }));
     engine = new StatusEngine(host, { now: () => clock, fetch: offline, manualTicks: true });
     await engine.start();
@@ -57,8 +69,9 @@ describe('StatusEngine', () => {
   });
 
   it('creates three lines with exactly one event-capturing container', () => {
-    expect(host.boxes).toHaveLength(3);
-    expect(host.boxes.filter((b) => b.captureEvents)).toHaveLength(1);
+    expect(host.page.texts).toHaveLength(3);
+    expect(host.page.images).toHaveLength(0);
+    expect(host.page.texts.filter((b) => b.captureEvents)).toHaveLength(1);
     expect(engine.mode).toBe('work');
   });
 
@@ -136,27 +149,118 @@ describe('StatusEngine', () => {
   });
 });
 
+describe('StatusEngine (HUD theme)', () => {
+  let host: FakeHost;
+  let clock: Date;
+  let engine: StatusEngine;
+  const lastImage = (id: number) => {
+    const i = [...host.images].reverse().find((x) => x.id === id);
+    return i ? JSON.parse(i.png) : undefined;
+  };
+
+  beforeEach(async () => {
+    host = new FakeHost();
+    clock = new Date(2026, 10, 19, 14, 32);
+    host.storage.set(SETTINGS_KEY, JSON.stringify({ ...DEFAULT_SETTINGS, calendar: { ...DEFAULT_SETTINGS.calendar, manual: '2026-11-19 15:00-16:00 디자인 리뷰' } }));
+    host.storage.set(STATE_KEY, JSON.stringify({ todos: [{ id: '1', text: '보고서 초안', done: false }] }));
+    engine = new StatusEngine(host, { now: () => clock, fetch: offline, manualTicks: true, renderer: fakeRenderer });
+    await engine.start();
+    host.device!({ connected: true, wearing: true, battery: 78, charging: false });
+    await engine.loadCalendar();
+    await engine.tick();
+  });
+
+  it('lays out a gauge, a timeline and three panels', () => {
+    expect(host.page.images.map((i) => i.id)).toEqual([IMAGE.gauge.id, IMAGE.timeline.id]);
+    expect(host.page.texts.filter((t) => t.border)).toHaveLength(2);
+    expect(host.text(BOX_ID.top)).toBe('» WORK');
+    expect(host.text(BOX_ID.main)).toBe('할 일: 보고서 초안');
+  });
+
+  it('draws the gauge and timeline from engine state', () => {
+    expect(lastImage(IMAGE.gauge.id)).toMatchObject({ kind: 'gauge', time: '14:32', day: 'THU', label: 'WORK', battery: 0.8, alert: false });
+    const tl = lastImage(IMAGE.timeline.id);
+    expect(tl).toMatchObject({ kind: 'timeline', startHour: 6, now: (14 - 6) * 60 + 30 });
+    expect(tl.events).toEqual([{ from: 9 * 60, to: 10 * 60, next: true, current: false }]);
+  });
+
+  it('only resends images whose content changed', async () => {
+    const before = host.images.length;
+    await engine.tick();
+    expect(host.images.length).toBe(before);
+    clock = new Date(2026, 10, 19, 14, 33); // gauge changes; timeline is quantised to 5 min
+    await engine.tick();
+    expect(host.images.slice(before).map((i) => i.id)).toEqual([IMAGE.gauge.id]);
+  });
+
+  it('flags an alert on the gauge when a meeting is imminent', async () => {
+    clock = new Date(2026, 10, 19, 14, 52);
+    await engine.tick();
+    expect(lastImage(IMAGE.gauge.id)).toMatchObject({ alert: true });
+  });
+
+  it('blanks the images when hidden and restores them after', async () => {
+    await engine.handleInput({ type: 'doubleClick' });
+    expect(lastImage(IMAGE.gauge.id)).toEqual({ kind: 'blank' });
+    expect(lastImage(IMAGE.timeline.id)).toEqual({ kind: 'blank' });
+    await engine.handleInput({ type: 'doubleClick' });
+    expect(lastImage(IMAGE.gauge.id)).toMatchObject({ kind: 'gauge' });
+  });
+
+  it('backs off for a minute after an image fails instead of retrying every tick', async () => {
+    host.imageOk = false;
+    clock = new Date(2026, 10, 19, 14, 33);
+    await engine.tick();
+    const afterFail = host.images.length;
+    clock = new Date(2026, 10, 19, 14, 33, 30);
+    await engine.tick();
+    expect(host.images.length).toBe(afterFail);
+    host.imageOk = true;
+    clock = new Date(2026, 10, 19, 14, 34, 1);
+    await engine.tick();
+    expect(host.images.length).toBeGreaterThan(afterFail);
+  });
+
+  it('switches to the classic theme without images', async () => {
+    await engine.applySettings({ ...engine.settings, theme: 'classic' });
+    expect(host.page.images).toHaveLength(0);
+    expect(host.text(BOX_ID.top)).toBe('14:32 목  78%');
+  });
+});
+
 describe('glasses page definition', () => {
-  it('passes the SDK validator and menu limits', () => {
-    for (const position of ['top', 'bottom'] as const) {
-      const boxes = buildBoxes({ ...DEFAULT_SETTINGS, position });
-      for (const b of boxes) {
-        expect(b.y).toBeGreaterThanOrEqual(0);
-        expect(b.y + b.height).toBeLessThanOrEqual(288);
+  it('passes the SDK validator for every theme and position', () => {
+    for (const theme of ['hud', 'classic'] as const) {
+      for (const position of ['top', 'bottom'] as const) {
+        const page = buildPage({ ...DEFAULT_SETTINGS, theme, position });
+        for (const b of [...page.texts, ...page.images]) {
+          expect(b.x).toBeGreaterThanOrEqual(0);
+          expect(b.y).toBeGreaterThanOrEqual(0);
+          expect(b.x + b.width).toBeLessThanOrEqual(576);
+          expect(b.y + b.height).toBeLessThanOrEqual(288);
+        }
+        for (const img of page.images) {
+          expect(img.width).toBeGreaterThanOrEqual(20);
+          expect(img.width).toBeLessThanOrEqual(288);
+          expect(img.height).toBeGreaterThanOrEqual(20);
+          expect(img.height).toBeLessThanOrEqual(144);
+        }
+        expect(page.images.length).toBeLessThanOrEqual(4);
+        expect(page.texts.length).toBeLessThanOrEqual(8);
+        expect([...page.texts].filter((t) => t.captureEvents)).toHaveLength(1);
+        for (const t of page.texts) {
+          if (t.border) {
+            expect(t.border.width).toBeLessThanOrEqual(5);
+            expect(t.border.color).toBeLessThanOrEqual(16);
+            expect(t.border.radius).toBeLessThanOrEqual(10);
+          }
+        }
+        const sdk = new CreateStartUpPageContainer(sdkPageFields(page, MENU));
+        expect(validateEvenHubPageContainer(sdk)).toEqual({ valid: true });
+        // Sanity check that the validator is not vacuous: duplicate z-order must fail.
+        sdk.textObject!.forEach((t) => (t.zOrderIndex = 1));
+        expect(validateEvenHubPageContainer(sdk)).toMatchObject({ valid: false });
       }
-      const page = new CreateStartUpPageContainer({
-        containerTotalNum: boxes.length,
-        textObject: boxes.map((b, i) => new TextContainerProperty({
-          xPosition: b.x, yPosition: b.y, width: b.width, height: b.height,
-          containerID: b.id, containerName: b.name, zOrderIndex: i + 1, content: b.content,
-          textColor: b.brightness, isEventCapture: b.captureEvents ? 1 : 0,
-        })),
-        menuObject: new MenuContainerProperty({ menuItems: MENU.map((m) => new MenuItemProperty({ itemID: m.id, itemName: m.label })) }),
-      });
-      expect(validateEvenHubPageContainer(page)).toEqual({ valid: true });
-      // Sanity check that the validator is not vacuous: duplicate z-order must fail.
-      page.textObject!.forEach((t) => (t.zOrderIndex = 1));
-      expect(validateEvenHubPageContainer(page)).toMatchObject({ valid: false });
     }
     expect(MENU.length).toBeLessThanOrEqual(10);
     expect(MENU.every((m) => isMenuNameWithinLimit(m.label))).toBe(true);

@@ -95,8 +95,8 @@ describe('labels', () => {
   });
 
   it('clips by visual width counting Korean as double', () => {
-    expect(clip('abcdef', 4)).toBe('abcd…');
-    expect(clip('가나다라', 5)).toBe('가나…');
+    expect(clip('abcdef', 4)).toBe('abcd..');
+    expect(clip('가나다라', 5)).toBe('가나..');
     expect(clip('짧음', 10)).toBe('짧음');
   });
 });

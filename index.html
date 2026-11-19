@@ -3,38 +3,58 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>G2 Status</title>
+    <meta name="theme-color" content="#03070c" />
+    <title>G2 Status HUD</title>
   </head>
   <body>
     <header class="app-header">
-      <h1>G2 Status</h1>
-      <span id="host-kind" class="badge"></span>
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <div>
+          <h1>G2 <span class="dim">//</span> STATUS HUD</h1>
+          <p class="sub">ALWAYS-ON CONTEXT DISPLAY</p>
+        </div>
+      </div>
+      <span id="host-kind" class="link"><i></i><b></b></span>
     </header>
 
-    <section class="card">
+    <section class="panel">
       <div class="row">
-        <h2>지금 글래스 화면</h2>
-        <span id="mode-label" class="badge"></span>
+        <h2><span class="idx">01</span> LIVE FEED <small>지금 글래스 화면</small></h2>
+        <span id="mode-label" class="tag"></span>
       </div>
-      <div id="live" class="live"></div>
-      <div id="preview" class="preview" hidden></div>
+      <div id="screen" class="screen-frame"></div>
+      <div id="preview-controls" class="g2-controls" hidden></div>
     </section>
 
-    <section class="card">
-      <h2>할 일</h2>
-      <p class="hint">한 줄에 하나씩. 맨 위 항목이 글래스에 표시됩니다. 글래스를 길게 누르면 완료 처리됩니다.</p>
+    <section class="panel">
+      <h2><span class="idx">02</span> MODE <small>화면 모드</small></h2>
+      <div id="modes" class="chips" role="radiogroup" aria-label="화면 모드"></div>
+      <div class="actions">
+        <button data-menu="3">POMODORO<small>뽀모도로</small></button>
+        <button data-menu="5">WATER +1<small>물 한 잔</small></button>
+        <button data-menu="4">TRAINING<small>운동 시작/종료</small></button>
+        <button data-menu="1">HIDE<small>숨기기/보이기</small></button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2><span class="idx">03</span> TASK QUEUE <small>할 일</small></h2>
+      <p class="hint">한 줄에 하나씩. 맨 위 항목이 글래스에 표시되고, 글래스를 길게 누르면 완료됩니다.</p>
       <textarea id="todos" rows="4" placeholder="보고서 초안 작성&#10;PR 리뷰"></textarea>
       <div class="row gap">
-        <button id="save-todos">할 일 저장</button>
-        <button id="pomodoro" class="secondary">뽀모도로 시작/정지</button>
+        <button id="save-todos" class="primary">할 일 저장</button>
       </div>
     </section>
 
-    <form id="settings" class="card">
-      <h2>설정</h2>
+    <form id="settings" class="panel">
+      <h2><span class="idx">04</span> SYSTEM CONFIG <small>설정</small></h2>
 
       <details open>
         <summary>화면</summary>
+        <label>테마
+          <select name="theme"><option value="hud">HUD (게이지 + 타임라인)</option><option value="classic">클래식 (텍스트 3줄)</option></select>
+        </label>
         <label>위치
           <select name="position"><option value="top">위쪽</option><option value="bottom">아래쪽</option></select>
         </label>
@@ -110,18 +130,18 @@
       </details>
 
       <div class="row gap">
-        <button type="submit">설정 저장</button>
+        <button type="submit" class="primary">설정 저장</button>
         <span id="save-status" class="hint"></span>
       </div>
     </form>
 
-    <section class="card hint">
-      <h2>글래스 조작</h2>
-      <ul>
-        <li><b>탭</b>: 뽀모도로 끝났으면 다음 단계 시작, 아니면 화면 모드 전환 (자동 → 기본 → 출퇴근 → … → 자동)</li>
-        <li><b>더블탭</b>: 화면 숨기기/보이기</li>
-        <li><b>길게 누르기</b>: 지금 할 일 완료</li>
-        <li><b>메뉴</b>: 뽀모도로, 물 +1, 운동 시작/종료, 새로고침 등</li>
+    <section class="panel hint">
+      <h2><span class="idx">05</span> CONTROLS <small>글래스 조작</small></h2>
+      <ul class="keys">
+        <li><kbd>TAP</kbd> 뽀모도로가 끝났으면 다음 단계, 아니면 화면 모드 전환</li>
+        <li><kbd>DOUBLE</kbd> 화면 숨기기/보이기</li>
+        <li><kbd>HOLD</kbd> 지금 할 일 완료</li>
+        <li><kbd>MENU</kbd> 뽀모도로, 물 +1, 운동, 새로고침 등</li>
       </ul>
     </section>
 
