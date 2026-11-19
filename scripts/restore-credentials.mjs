@@ -37,9 +37,20 @@ if (!seed && !extra) {
   process.exit(1);
 }
 
+// What each source holds (refresh-token expiry only), to see at a glance which login is newest.
+const expiryOf = (y) => {
+  const e = y && jwtExpiry(readYamlField(y, 'refresh_token'));
+  return e ? `Even Hub login, refresh token expires ${new Date(e * 1000).toISOString()}` : null;
+};
+console.log(`EVENHUB_CREDENTIALS_B64: ${expiryOf(seed) ?? 'not an Even Hub login'}`);
+if (process.env.EVENHUB_EXTRA_CREDENTIALS_B64) {
+  console.log(`EVENHUB_SECRET_WRITER_TOKEN: ${expiryOf(extra) ?? 'not an Even Hub login (no longer needed; you can delete it)'}`);
+}
+
 const sessionFile = process.env.EVENHUB_SESSION_FILE || '.evenhub-session/state.enc';
 const cached = existsSync(sessionFile) ? decryptSession(readFileSync(sessionFile), sessionKey(b64)) : null;
 if (existsSync(sessionFile) && !cached) console.log('Cached session is from an older ci-login; ignoring it.');
+if (cached) console.log(`session cache: ${expiryOf(cached)}`);
 let pick = newerCredentials(seed ?? extra, cached);
 if (seed && extra) {
   const other = newerCredentials(pick.yaml, extra);
