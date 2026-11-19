@@ -34,6 +34,12 @@ jobs:
 
       - run: npm ci
 
+      # Fail before any Even Hub call if refreshed tokens couldn't be saved.
+      - name: Check secret writer token
+        env:
+          GH_TOKEN: ${{ secrets.EVENHUB_SECRET_WRITER_TOKEN }}
+        run: bash scripts/save-credentials.sh --check
+
       - name: Restore Even Hub credentials
         id: creds
         env:

@@ -309,3 +309,31 @@ describe('store icon validation (mirrors evenhub create --icon)', () => {
     expect(validateIcon(decodePng(png((x, y) => (x >= 1 && x < 3 && y < 2 ? INK : CLEAR))))).toEqual([]); // odd offset is fine if the block is whole
   });
 });
+
+describe('scripts/save-credentials.sh --check', () => {
+  const check = (ghExit: number, token = 'pat') => {
+    const dir = mkdtempSync(join(tmpdir(), 'check-'));
+    const gh = join(dir, 'gh');
+    writeFileSync(gh, `#!/usr/bin/env bash\necho "$*" > "${dir}/args"\n[ ${ghExit} -eq 0 ] || echo "HTTP 401: Bad credentials" >&2\nexit ${ghExit}\n`);
+    chmodSync(gh, 0o755);
+    const r = spawnSync('bash', ['scripts/save-credentials.sh', '--check'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, GITHUB_ACTIONS: '', GITHUB_REPOSITORY: 'me/repo', GH_BIN: gh, GH_TOKEN: token },
+    });
+    return { ...r, args: existsSync(join(dir, 'args')) ? readFileSync(join(dir, 'args'), 'utf8').trim() : null };
+  };
+
+  it('passes when the token can read the secrets public key', () => {
+    const r = check(0);
+    expect(r.status).toBe(0);
+    expect(r.args).toBe('api repos/me/repo/actions/secrets/public-key --silent');
+  });
+
+  it('fails early with the GitHub error when the token is bad or missing', () => {
+    const bad = check(1);
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toContain('Bad credentials');
+    expect(check(0, '').status).toBe(1);
+  });
+});
