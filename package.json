@@ -1,7 +1,7 @@
 {
   "name": "even-g2-status",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Even Realities G2 always-on status HUD plugin",
   "scripts": {
