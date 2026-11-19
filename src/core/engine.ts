@@ -1,5 +1,7 @@
-import { BOX_ID, buildBoxes, LINE_WIDTH, MENU, MenuId } from '../glasses/layout';
-import type { Host } from '../platform/host';
+import type { HudRenderer } from '../glasses/draw';
+import { BOX_ID, BOX_NAME, buildPage, IMAGE, lineWidth, MENU, MenuId } from '../glasses/layout';
+import { gaugeModel, modelKey, timelineModel } from '../glasses/visuals';
+import type { Host, ImageBox, Page } from '../platform/host';
 import { createWidgets } from '../widgets';
 import { clip, type Widget, type WidgetEnv } from '../widgets/widget';
 import { nextOverride, resolveMode } from './context';
@@ -32,7 +34,11 @@ export interface EngineOptions {
   fetch?: typeof fetch;
   /** Disable timers (tests drive tick() manually). */
   manualTicks?: boolean;
+  /** Draws HUD-theme images. Without it the HUD theme shows its text panels only. */
+  renderer?: HudRenderer;
 }
+
+const IMAGE_RETRY_MS = 60_000;
 
 /**
  * The status HUD engine: decides the mode, renders widgets into three lines,
@@ -49,6 +55,10 @@ export class StatusEngine {
 
   private widgets: Map<WidgetId, Widget>;
   private sent = new Map<number, { text: string; brightness: number }>();
+  /** Last model key sent per image container (images are expensive: ~100ms each over BLE). */
+  private sentImages = new Map<number, string>();
+  private imageRetryAt = 0;
+  private page: Page = { texts: [], images: [] };
   private nextRefresh = new Map<string, number>();
   private refreshing = new Set<string>();
   private seenUrgent = new Set<string>();
@@ -57,6 +67,7 @@ export class StatusEngine {
   private blinking = false;
   private pushing: Promise<void> | null = null;
   private pendingLines: Record<LineName, RenderedLine> | null = null;
+  private pendingNow = new Date(0);
   private timer: ReturnType<typeof setInterval> | null = null;
   private unsubs: (() => void)[] = [];
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -82,11 +93,11 @@ export class StatusEngine {
       this.host.onDevice((d) => {
         const wasActive = this.isActive();
         this.device = d;
-        if (!wasActive && this.isActive()) this.sent.clear(); // force full redraw
+        if (!wasActive && this.isActive()) this.forceRedraw();
         void this.tick();
       }),
     );
-    await this.host.createPage(buildBoxes(this.settings), MENU);
+    await this.createPage();
     await this.tick();
     if (!this.opts.manualTicks) this.timer = setInterval(() => void this.tick(), TICK_MS);
   }
@@ -109,15 +120,26 @@ export class StatusEngine {
   }
 
   async applySettings(settings: Settings): Promise<void> {
-    const relayout = settings.position !== this.settings.position;
+    const relayout = settings.position !== this.settings.position || settings.theme !== this.settings.theme;
     this.settings = settings;
     await this.host.save(SETTINGS_KEY, JSON.stringify(settings));
     this.nextRefresh.clear(); // refetch with new config
-    if (relayout) {
-      await this.host.createPage(buildBoxes(settings), MENU);
-    }
-    this.sent.clear();
+    if (relayout) await this.createPage();
+    this.forceRedraw();
     await this.tick();
+  }
+
+  private async createPage(): Promise<void> {
+    this.page = buildPage(this.settings);
+    await this.host.createPage(this.page, MENU);
+    this.forceRedraw();
+  }
+
+  /** Resend everything on the next push (after a relayout or coming back to the foreground). */
+  private forceRedraw(): void {
+    this.sent.clear();
+    this.sentImages.clear();
+    this.imageRetryAt = 0;
   }
 
   /** Mutate state, persist (debounced), and re-render. */
@@ -161,19 +183,20 @@ export class StatusEngine {
     const lines = this.renderLines(now);
     this.lastLines = lines;
     this.listeners.forEach((cb) => cb());
-    if (this.isActive() && !this.blinking) await this.enqueuePush(lines);
+    if (this.isActive() && !this.blinking) await this.enqueuePush(lines, now);
   }
 
   /** Serialise pushes: BLE writes must not interleave; only the newest pending frame is sent. */
-  private async enqueuePush(lines: Record<LineName, RenderedLine>): Promise<void> {
+  private async enqueuePush(lines: Record<LineName, RenderedLine>, now: Date): Promise<void> {
     this.pendingLines = lines;
+    this.pendingNow = now;
     if (this.pushing) return this.pushing;
     this.pushing = (async () => {
       try {
         while (this.pendingLines) {
           const next = this.pendingLines;
           this.pendingLines = null;
-          await this.push(next);
+          await this.push(next, this.pendingNow);
         }
       } finally {
         this.pushing = null;
@@ -187,6 +210,7 @@ export class StatusEngine {
     const layout = layoutFor(this.settings, this.mode);
     const base = this.settings.brightness;
     const out = {} as Record<LineName, RenderedLine>;
+    const width = lineWidth(this.settings);
 
     for (const line of LINES) {
       if (this.state.hidden) {
@@ -209,25 +233,25 @@ export class StatusEngine {
         }
       }
       const normal = line === 'main' ? Math.min(4, base + 1) : base;
-      out[line] = { text: clip(parts.join('  '), LINE_WIDTH) || ' ', brightness: urgent ? 4 : normal, urgent };
+      out[line] = { text: clip(parts.join(this.settings.theme === 'hud' ? ' · ' : '  '), width) || ' ', brightness: urgent ? 4 : normal, urgent };
     }
 
     if (this.toast && this.toast.until > now.getTime()) {
-      out.main = { text: clip(this.toast.text, LINE_WIDTH), brightness: 4, urgent: false };
+      out.main = { text: clip(this.toast.text, width), brightness: 4, urgent: false };
     } else {
       this.toast = null;
     }
     return out;
   }
 
-  private async push(lines: Record<LineName, RenderedLine>): Promise<void> {
+  private async push(lines: Record<LineName, RenderedLine>, now: Date): Promise<void> {
     const toBlink: LineName[] = [];
     for (const line of LINES) {
       const l = lines[line];
       const id = BOX_ID[line];
       const prev = this.sent.get(id);
       if (prev && prev.text === l.text && prev.brightness === l.brightness) continue;
-      const ok = await this.host.updateText({ id, name: `hud-${line}` }, l.text, l.brightness);
+      const ok = await this.host.updateText({ id, name: BOX_NAME[line] }, l.text, l.brightness);
       if (ok) this.sent.set(id, { text: l.text, brightness: l.brightness });
       if (l.urgent && !this.seenUrgent.has(l.text)) toBlink.push(line);
     }
@@ -236,6 +260,46 @@ export class StatusEngine {
     for (const t of this.seenUrgent) if (!urgentNow.has(t)) this.seenUrgent.delete(t);
     urgentNow.forEach((t) => this.seenUrgent.add(t));
     if (toBlink.length && !this.opts.manualTicks) void this.blink(toBlink, lines);
+    await this.pushImages(lines, now);
+  }
+
+  /** Redraw and send HUD images whose content changed. Never concurrent (called inside push). */
+  private async pushImages(lines: Record<LineName, RenderedLine>, now: Date): Promise<void> {
+    const r = this.opts.renderer;
+    if (!r || !this.page.images.length || now.getTime() < this.imageRetryAt) return;
+    const alert = LINES.some((l) => lines[l].urgent);
+    for (const img of this.page.images) {
+      let key: string;
+      let draw: () => Promise<Uint8Array>;
+      if (this.state.hidden) {
+        key = 'blank';
+        draw = () => r.blank(img.width, img.height);
+      } else if (img.id === IMAGE.gauge.id) {
+        const m = gaugeModel({ now, state: this.state, settings: this.settings, device: this.device, mode: this.mode, alert });
+        key = modelKey(m);
+        draw = () => r.gauge(m, img.width, img.height);
+      } else {
+        const m = timelineModel(now, this.events);
+        key = modelKey(m);
+        draw = () => r.timeline(m, img.width, img.height);
+      }
+      if (this.sentImages.get(img.id) === key) continue;
+      if (!(await this.sendImage(img, draw))) {
+        // Don't hammer the BLE link with a broken image; try again in a minute.
+        this.imageRetryAt = now.getTime() + IMAGE_RETRY_MS;
+        return;
+      }
+      this.sentImages.set(img.id, key);
+    }
+  }
+
+  private async sendImage(img: ImageBox, draw: () => Promise<Uint8Array>): Promise<boolean> {
+    try {
+      return await this.host.updateImage(img, await draw());
+    } catch (e) {
+      console.warn(`image ${img.name} failed`, e);
+      return false;
+    }
   }
 
   /** Pulse brightness a few times to catch the eye, then restore. */
@@ -244,7 +308,7 @@ export class StatusEngine {
     try {
       for (const level of [1, 4, 1, 4]) {
         await sleep(350);
-        for (const l of lines) await this.host.updateText({ id: BOX_ID[l], name: `hud-${l}` }, rendered[l].text, level);
+        for (const l of lines) await this.host.updateText({ id: BOX_ID[l], name: BOX_NAME[l] }, rendered[l].text, level);
       }
     } finally {
       this.blinking = false;
@@ -315,7 +379,7 @@ export class StatusEngine {
     switch (action.type) {
       case 'foreground':
         this.foreground = action.active;
-        if (action.active) this.sent.clear();
+        if (action.active) this.forceRedraw();
         break;
       case 'click':
         // Context-sensitive primary action.

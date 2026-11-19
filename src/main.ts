@@ -1,44 +1,57 @@
 import './ui/style.css';
 import { StatusEngine } from './core/engine';
-import { togglePomodoro } from './core/pomodoro';
 import { activeTodos, setTodosFromText } from './core/state';
-import { LINES, MODE_LABEL } from './core/types';
+import { MODE_CODE, MODES, type Mode } from './core/types';
+import { createCanvasRenderer } from './glasses/draw';
 import { createEvenHost, isEvenApp } from './platform/evenHost';
 import type { Host } from './platform/host';
 import { createPreviewHost } from './platform/previewHost';
+import { createScreen, mirrorHost } from './platform/screen';
 import { fillForm, readForm } from './ui/settingsForm';
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
 async function main(): Promise<void> {
+  // The phone shows the same 576x288 page the glasses get (mirror), or a simulator.
+  const screen = createScreen($('#screen'));
   let host: Host;
+  const link = $('#host-kind');
   if (isEvenApp()) {
-    host = await createEvenHost();
+    host = mirrorHost(await createEvenHost(), screen);
+    link.querySelector('b')!.textContent = 'G2 LINK ONLINE';
   } else {
-    const preview = $('#preview');
-    preview.hidden = false;
-    host = createPreviewHost(preview);
+    const controls = $('#preview-controls');
+    controls.hidden = false;
+    host = createPreviewHost(screen, controls);
+    link.classList.add('sim');
+    link.querySelector('b')!.textContent = 'SIMULATION';
   }
-  $('#host-kind').textContent = host.kind === 'glasses' ? 'G2 연결됨' : '브라우저 미리보기';
 
-  const engine = new StatusEngine(host);
+  const engine = new StatusEngine(host, { renderer: createCanvasRenderer() });
   await engine.start();
 
-  // Live mirror of the HUD lines on the phone.
-  const live = $('#live');
+  // Mode chips: AUTO + each mode; selecting one pins it (same as tapping the glasses).
+  const modes = $('#modes');
+  const chip = (label: string, value: Mode | null) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.textContent = label;
+    b.addEventListener('click', () => void engine.mutate((s) => (s.modeOverride = value)));
+    modes.appendChild(b);
+    return [b, value] as const;
+  };
+  const chips = [chip('AUTO', null), ...MODES.map((m) => chip(MODE_CODE[m], m))];
+
+  document.querySelectorAll<HTMLButtonElement>('[data-menu]').forEach((b) =>
+    b.addEventListener('click', () => void engine.handleInput({ type: 'menu', itemId: +b.dataset.menu! })),
+  );
+
   const modeLabel = $('#mode-label');
   engine.subscribe(() => {
-    const l = engine.lastLines;
-    if (!l) return;
-    live.innerHTML = '';
-    for (const line of LINES) {
-      const div = document.createElement('div');
-      div.textContent = l[line].text;
-      div.style.opacity = String(0.35 + l[line].brightness * 0.16);
-      live.appendChild(div);
-    }
-    const auto = engine.state.modeOverride ? '고정' : '자동';
-    modeLabel.textContent = `${MODE_LABEL[engine.mode]} · ${auto}${engine.state.hidden ? ' · 숨김' : ''}`;
+    const pinned = engine.state.modeOverride;
+    modeLabel.textContent = `${MODE_CODE[engine.mode]} · ${pinned ? 'LOCK' : 'AUTO'}${engine.state.hidden ? ' · HIDDEN' : ''}`;
+    for (const [b, value] of chips) b.setAttribute('aria-checked', String(value === pinned));
   });
 
   // Todos
@@ -46,9 +59,6 @@ async function main(): Promise<void> {
   todos.value = activeTodos(engine.state).map((t) => t.text).join('\n');
   $('#save-todos').addEventListener('click', () => {
     void engine.mutate((s) => setTodosFromText(s, todos.value));
-  });
-  $('#pomodoro').addEventListener('click', () => {
-    void engine.mutate((s) => togglePomodoro(s, engine.settings, Date.now()));
   });
   // Keep the textarea in sync when todos are completed from the glasses (unless the user is editing).
   engine.subscribe(() => {

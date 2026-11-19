@@ -1,6 +1,13 @@
+import { MODE_CODE } from '../core/types';
 import { fetchJson, hhmm, clip, relMinutes, type Widget } from './widget';
 
 const KO_WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** HUD status code: "» WORK", plus "LOCK" when the mode is pinned by hand. */
+export const modeWidget: Widget = {
+  id: 'mode',
+  render: (env) => ({ text: `» ${MODE_CODE[env.mode]}${env.state.modeOverride ? ' LOCK' : ''}` }),
+};
 
 export const clockWidget: Widget = {
   id: 'clock',

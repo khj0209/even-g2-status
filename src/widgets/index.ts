@@ -1,5 +1,5 @@
 import type { WidgetId } from '../core/types';
-import { batteryWidget, calendarWidget, clockWidget, createAirWidget, createWeatherWidget, tomorrowWidget } from './basic';
+import { batteryWidget, calendarWidget, clockWidget, createAirWidget, createWeatherWidget, modeWidget, tomorrowWidget } from './basic';
 import { createDevWidget } from './dev';
 import { focusWidget, todayWidget, workoutWidget } from './personal';
 import { createTrackerWidget } from './tracker';
@@ -8,6 +8,7 @@ import type { Widget } from './widget';
 
 export function createWidgets(): Map<WidgetId, Widget> {
   const list: Widget[] = [
+    modeWidget,
     clockWidget,
     createWeatherWidget(),
     createAirWidget(),
@@ -25,6 +26,7 @@ export function createWidgets(): Map<WidgetId, Widget> {
 }
 
 export const WIDGET_LABEL: Record<WidgetId, string> = {
+  mode: '모드 표시 (HUD)',
   clock: '시계',
   weather: '날씨',
   air: '미세먼지',

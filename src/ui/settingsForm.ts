@@ -49,6 +49,7 @@ export function fillForm(form: HTMLFormElement, s: Settings): void {
     const el = form.elements.namedItem(name) as Field | null;
     if (el) el.value = String(value);
   };
+  set('theme', s.theme);
   set('position', s.position);
   set('brightness', s.brightness);
   set('workHours', s.workHours);
@@ -82,6 +83,7 @@ export function readForm(form: HTMLFormElement, current: Settings): Settings {
   };
   return mergeSettings({
     ...current,
+    theme: get('theme') === 'classic' ? 'classic' : 'hud',
     position: get('position') === 'bottom' ? 'bottom' : 'top',
     brightness: num('brightness', 0, 4, current.brightness),
     workHours: get('workHours') || current.workHours,

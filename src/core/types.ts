@@ -11,6 +11,7 @@ export const MODE_LABEL: Record<Mode, string> = {
 };
 
 export type WidgetId =
+  | 'mode'
   | 'clock'
   | 'weather'
   | 'air'
@@ -30,6 +31,17 @@ export interface WidgetOutput {
   /** Urgent output makes its line full brightness and triggers a short blink. */
   urgent?: boolean;
 }
+
+/** Short English status codes used by the HUD theme ("» WORK"). */
+export const MODE_CODE: Record<Mode, string> = {
+  default: 'STANDBY',
+  commute: 'TRANSIT',
+  work: 'WORK',
+  workout: 'TRAINING',
+  evening: 'EVENING',
+};
+
+export type Theme = 'hud' | 'classic';
 
 export type LineName = 'top' | 'main' | 'sub';
 export const LINES: LineName[] = ['top', 'main', 'sub'];
