@@ -139,11 +139,11 @@ npm run pack      # → g2-status.ehpk
    # gh가 없으면: npm run ci-login → 출력된 한 줄을 Settings → Secrets → Actions에 직접 등록
    ```
    임시 폴더의 사본은 끝나면 삭제되고, 세션은 GitHub secret에만 남습니다.
-2. **갱신된 토큰을 secret에 다시 저장할 토큰 만들기** (`EVENHUB_SECRET_WRITER_TOKEN`)
-   - GitHub → Settings → Developer settings → Fine-grained tokens → 이 저장소만 선택 → Repository permissions **Secrets: Read and write**
-   - 만든 토큰을 이 저장소의 secret `EVENHUB_SECRET_WRITER_TOKEN`으로 등록
-   - Release 워크플로가 Even Hub 토큰을 갱신하면 새 토큰을 `EVENHUB_CREDENTIALS_B64`에 다시 저장합니다.
-     이게 없으면 첫 갱신 이후 secret이 무효가 되어 매번 `ci-login`을 다시 해야 합니다.
+2. 끝입니다. 다른 토큰은 필요 없습니다.
+   - Even Hub CLI는 토큰을 갱신할 때마다 refresh token을 바꿉니다. 워크플로는 갱신된 세션을 **암호화해서 GitHub Actions 캐시**에
+     남기고 다음 실행에서 이어 씁니다(`scripts/save-session.mjs`). 암호화 키는 `EVENHUB_CREDENTIALS_B64`에서 만들어지므로,
+     공개 저장소의 캐시를 누가 받아도 풀 수 없습니다.
+   - 매번 secret과 캐시 중 refresh token이 더 늦게 만료되는 쪽을 씁니다. `ci-login`을 다시 하면 그게 자동으로 우선됩니다.
 3. (선택) Settings → Environments → `evenhub` 환경에 **Required reviewers**를 걸면 업로드마다 승인 후 진행됩니다.
 4. (선택) Actions **Variables**
    - `EVENHUB_BETA` = `false`: beta 채널 지정 생략

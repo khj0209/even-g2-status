@@ -1,12 +1,17 @@
 #!/usr/bin/env node
-// Writes the Even Hub CLI credentials from the EVENHUB_CREDENTIALS_B64 secret
-// to $XDG_CONFIG_HOME/evenhub/credentials.yaml and warns before the refresh
-// token expires. `evenhub login` needs an interactive terminal, so CI reuses
-// a CI-only session created by `npm run ci-login` (see README "자동 배포").
-import { mkdirSync, writeFileSync } from 'node:fs';
+// Writes the Even Hub CLI credentials to $XDG_CONFIG_HOME/evenhub/credentials.yaml
+// and warns before the refresh token expires. `evenhub login` needs an interactive
+// terminal, so CI reuses a CI-only session created by `npm run ci-login`.
+//
+// Two sources, newest wins (by refresh-token expiry):
+//  - the EVENHUB_CREDENTIALS_B64 secret (set by ci-login), and
+//  - the encrypted session the previous run left in the Actions cache
+//    (EVENHUB_SESSION_FILE, default .evenhub-session/state.enc), which holds the
+//    rotated tokens. See scripts/save-session.mjs.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { jwtClaims, jwtExpiry, readYamlField } from './release-lib.mjs';
+import { decryptSession, jwtClaims, jwtExpiry, newerCredentials, readYamlField, sessionKey } from './release-lib.mjs';
 
 // Even Hub refresh tokens live 7 days; the keep-alive workflow refreshes daily.
 const WARN_DAYS = 2;
@@ -19,12 +24,18 @@ if (!b64) {
   error('EVENHUB_CREDENTIALS_B64 secret is not set. Run `npm run ci-login -- --set` locally (creates a CI-only session).');
   process.exit(1);
 }
-const yaml = Buffer.from(b64, 'base64').toString('utf8');
-const refresh = readYamlField(yaml, 'refresh_token');
-if (!refresh || !readYamlField(yaml, 'access_token')) {
-  error('EVENHUB_CREDENTIALS_B64 does not decode to a valid credentials.yaml (missing tokens).');
+const seed = Buffer.from(b64, 'base64').toString('utf8');
+if (!readYamlField(seed, 'refresh_token') || !readYamlField(seed, 'access_token')) {
+  error('EVENHUB_CREDENTIALS_B64 does not decode to a valid credentials.yaml (missing tokens). Run `npm run ci-login -- --set` locally.');
   process.exit(1);
 }
+
+const sessionFile = process.env.EVENHUB_SESSION_FILE || '.evenhub-session/state.enc';
+const cached = existsSync(sessionFile) ? decryptSession(readFileSync(sessionFile), sessionKey(b64)) : null;
+if (existsSync(sessionFile) && !cached) console.log('Cached session is from an older ci-login; using the secret.');
+const { yaml, source } = newerCredentials(seed, cached);
+console.log(`Using Even Hub credentials from the ${source === 'cache' ? 'session cache (rotated tokens)' : 'EVENHUB_CREDENTIALS_B64 secret'}.`);
+const refresh = readYamlField(yaml, 'refresh_token');
 
 // Diagnostics (no secrets): when were these tokens issued? Helps tell a stale
 // secret apart from a session the server revoked.

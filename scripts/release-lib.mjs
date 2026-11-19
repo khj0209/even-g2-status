@@ -1,4 +1,5 @@
 import yaml from 'js-yaml';
+import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 // Pure helpers used by the release scripts (unit-tested in test/release.test.ts).
 
@@ -157,4 +158,49 @@ export function validateIcon({ width, height, rgba }) {
     }
   }
   return [];
+}
+
+// ---------------------------------------------------------------- CI session cache
+//
+// The Even Hub CLI rotates its refresh token on every refresh, so CI must keep
+// the newest credentials between runs. They are stored in the GitHub Actions
+// cache, encrypted (AES-256-GCM) with a key derived from the
+// EVENHUB_CREDENTIALS_B64 secret: the repository is public and caches can be
+// restored by fork pull requests, which never see secrets.
+
+/** Encryption key for the cached session, derived from the seed secret. */
+export function sessionKey(seedB64) {
+  return crypto.createHash('sha256').update(`g2status-evenhub-session:${seedB64.trim()}`).digest();
+}
+
+export function encryptSession(yamlText, key) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const body = Buffer.concat([cipher.update(yamlText, 'utf8'), cipher.final()]);
+  return Buffer.concat([Buffer.from('G2S1'), iv, cipher.getAuthTag(), body]);
+}
+
+/** Returns the YAML text, or null if the blob is missing, corrupt, or from another seed. */
+export function decryptSession(blob, key) {
+  try {
+    if (!blob || blob.length < 4 + 12 + 16 || blob.subarray(0, 4).toString() !== 'G2S1') return null;
+    const iv = blob.subarray(4, 16);
+    const tag = blob.subarray(16, 32);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(blob.subarray(32)), decipher.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pick the newer of the seed (secret) and cached credentials by refresh-token
+ * expiry: a fresh `ci-login` beats an old cache, a rotated cache beats the seed.
+ */
+export function newerCredentials(seedYaml, cachedYaml) {
+  if (!cachedYaml || !readYamlField(cachedYaml, 'refresh_token')) return { yaml: seedYaml, source: 'secret' };
+  const seedExp = jwtExpiry(readYamlField(seedYaml, 'refresh_token')) ?? 0;
+  const cacheExp = jwtExpiry(readYamlField(cachedYaml, 'refresh_token')) ?? 0;
+  return cacheExp >= seedExp ? { yaml: cachedYaml, source: 'cache' } : { yaml: seedYaml, source: 'secret' };
 }

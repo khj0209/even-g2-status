@@ -67,11 +67,13 @@ jobs:
       - name: Release notes
         run: node scripts/release-notes.mjs "${TAG:-v${{ steps.pack.outputs.version }}}" release-notes.md
 
-      # Fail before any Even Hub call if refreshed tokens couldn't be saved.
-      - name: Check secret writer token
-        env:
-          GH_TOKEN: ${{ secrets.EVENHUB_SECRET_WRITER_TOKEN }}
-        run: bash scripts/save-credentials.sh --check
+      # The newest Even Hub session (rotated tokens), encrypted; see scripts/save-session.mjs.
+      - name: Restore Even Hub session cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .evenhub-session
+          key: evenhub-session-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: evenhub-session-
 
       - name: Restore Even Hub credentials
         id: creds
@@ -88,14 +90,20 @@ jobs:
           EVENHUB_API_DEBUG: '1'
         run: bash scripts/publish.sh "${{ steps.pack.outputs.file }}" "${{ steps.pack.outputs.version }}" release-notes.md
 
-      # The CLI rotates the refresh token when it refreshes; store the new one
-      # so the next release can still log in. Runs even if the upload failed.
-      - name: Save refreshed Even Hub credentials
+      # The CLI rotates the refresh token when it refreshes: keep the newest
+      # session for the next run. Runs even if the upload failed.
+      - name: Save Even Hub session
         if: always() && steps.creds.outcome == 'success'
         env:
           EVENHUB_CREDENTIALS_B64: ${{ secrets.EVENHUB_CREDENTIALS_B64 }}
-          GH_TOKEN: ${{ secrets.EVENHUB_SECRET_WRITER_TOKEN }}
-        run: bash scripts/save-credentials.sh
+        run: node scripts/save-session.mjs
+
+      - name: Store Even Hub session cache
+        if: always() && steps.creds.outcome == 'success' && hashFiles('.evenhub-session/state.enc') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .evenhub-session
+          key: evenhub-session-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: GitHub Release
         if: env.TAG != ''
@@ -111,7 +119,7 @@ jobs:
 
       - name: Remove credentials
         if: always()
-        run: rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/evenhub"
+        run: rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/evenhub" .evenhub-session
 
       - uses: actions/upload-artifact@v4
         if: always()

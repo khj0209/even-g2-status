@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain .mjs helper without type declarations
-import { checkVersions, decodePng, jwtExpiry, notesFromCommits, readYamlField, truncateNotes, validateIcon } from '../scripts/release-lib.mjs';
+import { checkVersions, decodePng, decryptSession, encryptSession, jwtExpiry, newerCredentials, notesFromCommits, readYamlField, sessionKey, truncateNotes, validateIcon } from '../scripts/release-lib.mjs';
 import { deflateSync } from 'node:zlib';
 
 describe('release helpers', () => {
@@ -164,79 +164,6 @@ describe('scripts/version.mjs', () => {
   });
 });
 
-describe('scripts/save-credentials.sh', () => {
-  /** Fake `gh` that records argv and stdin. */
-  function setup(fileContent: string | null, secretContent: string, withToken = true) {
-    const dir = mkdtempSync(join(tmpdir(), 'save-'));
-    if (fileContent !== null) {
-      execFileSync('mkdir', ['-p', join(dir, 'evenhub')]);
-      writeFileSync(join(dir, 'evenhub', 'credentials.yaml'), fileContent);
-    }
-    const gh = join(dir, 'gh');
-    writeFileSync(gh, `#!/usr/bin/env bash\necho "$*" > "${dir}/gh.args"\ncat > "${dir}/gh.stdin"\n`);
-    chmodSync(gh, 0o755);
-    const r = spawnSync('bash', ['scripts/save-credentials.sh'], {
-      cwd: root,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        GITHUB_ACTIONS: '',
-        GITHUB_REPOSITORY: 'me/repo',
-        XDG_CONFIG_HOME: dir,
-        GH_BIN: gh,
-        GH_TOKEN: withToken ? 'pat' : '',
-        EVENHUB_CREDENTIALS_B64: Buffer.from(secretContent).toString('base64'),
-      },
-    });
-    const read = (f: string) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null);
-    return { ...r, args: read('gh.args'), stdin: read('gh.stdin') };
-  }
-
-  it('does nothing when the tokens were not refreshed', () => {
-    const r = setup('access_token: x\nrefresh_token: a\n', 'access_token: x\nrefresh_token: a\n');
-    expect(r.status).toBe(0);
-    expect(r.args).toBeNull();
-  });
-
-  it('ignores formatting differences when the tokens are the same', () => {
-    const r = setup('email: me@example.com\naccess_token: "x"\nrefresh_token: "a"\n', 'refresh_token: a\naccess_token: x\n');
-    expect(r.status).toBe(0);
-    expect(r.args).toBeNull();
-  });
-
-  it('saves when the stored secret cannot be parsed (safe default)', () => {
-    const r = setup('access_token: x\nrefresh_token: a\n', 'garbage');
-    expect(r.status).toBe(0);
-    expect(r.args).not.toBeNull();
-  });
-
-  it('writes rotated tokens back via stdin, never argv', () => {
-    const r = setup('access_token: x2\nrefresh_token: NEW\n', 'access_token: x\nrefresh_token: old\n');
-    expect(r.status).toBe(0);
-    expect(r.args!.trim()).toBe('secret set EVENHUB_CREDENTIALS_B64 --repo me/repo');
-    expect(Buffer.from(r.stdin!, 'base64').toString()).toBe('access_token: x2\nrefresh_token: NEW\n');
-  });
-
-  it('fails loudly if tokens rotated but no writer token is configured', () => {
-    const r = setup('access_token: x2\nrefresh_token: NEW\n', 'access_token: x\nrefresh_token: old\n', false);
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('EVENHUB_SECRET_WRITER_TOKEN');
-  });
-
-  it('detects rotated tokens in the folded format the CLI actually writes', () => {
-    const tok = (t: string) => 'eyJ' + t.repeat(120) + '.eyJ' + t.repeat(80) + '.sig';
-    const cli = (a: string, r: string) => `email: me@example.com\naccess_token: >-\n  ${a}\nrefresh_token: >-\n  ${r}\n`;
-    const same = setup(cli(tok('a'), tok('b')), cli(tok('a'), tok('b')));
-    expect(same.args).toBeNull();
-    const rotated = setup(cli(tok('c'), tok('d')), cli(tok('a'), tok('b')));
-    expect(rotated.status).toBe(0);
-    expect(rotated.args).not.toBeNull();
-  });
-
-  it('is a no-op without a credentials file', () => {
-    expect(setup(null, 'x').status).toBe(0);
-  });
-});
 
 describe('scripts/ci-login.mjs', () => {
   it('logs in under a temporary config dir and never touches the real one', () => {
@@ -310,44 +237,48 @@ describe('store icon validation (mirrors evenhub create --icon)', () => {
   });
 });
 
-describe('scripts/save-credentials.sh --check', () => {
-  const check = (ghExit: number, token = 'pat') => {
-    const dir = mkdtempSync(join(tmpdir(), 'check-'));
-    const gh = join(dir, 'gh');
-    writeFileSync(gh, `#!/usr/bin/env bash\necho "$*" > "${dir}/args"\n[ ${ghExit} -eq 0 ] || echo "HTTP 401: Bad credentials" >&2\nexit ${ghExit}\n`);
-    chmodSync(gh, 0o755);
-    const r = spawnSync('bash', ['scripts/save-credentials.sh', '--check'], {
-      cwd: root,
-      encoding: 'utf8',
-      env: { ...process.env, GITHUB_ACTIONS: '', GITHUB_REPOSITORY: 'me/repo', GH_BIN: gh, GH_TOKEN: token },
-    });
-    return { ...r, args: existsSync(join(dir, 'args')) ? readFileSync(join(dir, 'args'), 'utf8').trim() : null };
-  };
 
-  it('passes when the token can read the secrets public key', () => {
-    const r = check(0);
-    expect(r.status).toBe(0);
-    expect(r.args).toBe('api repos/me/repo/actions/secrets/public-key --silent');
+describe('encrypted Even Hub session cache', () => {
+  const day = 86400;
+  const now = Math.floor(Date.now() / 1000);
+  const jwt = (exp: number) => `h.${Buffer.from(JSON.stringify({ exp: now + exp * day })).toString('base64url')}.s`;
+  // exp is in days from now
+  const creds = (exp: number, tag = 'x') => `email: me@example.com\naccess_token: ${tag}\nrefresh_token: ${jwt(exp)}\n`;
+  const seedB64 = Buffer.from(creds(3)).toString('base64');
+
+  it('round-trips with the key from the seed secret, and nothing else', () => {
+    const blob = encryptSession('secret yaml', sessionKey(seedB64));
+    expect(decryptSession(blob, sessionKey(seedB64))).toBe('secret yaml');
+    expect(decryptSession(blob, sessionKey('another-seed'))).toBeNull();
+    expect(blob.toString('utf8')).not.toContain('secret yaml');
+    const tampered = Buffer.from(blob);
+    tampered[tampered.length - 1] ^= 1;
+    expect(decryptSession(tampered, sessionKey(seedB64))).toBeNull();
   });
 
-  it('trims whitespace from a pasted token and reports its shape, never its value', () => {
-    const r = check(0, '  github_pat_ABCDEF123\n');
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain('fine-grained token, 20 chars'); // spaces and newline trimmed
-    expect(r.stdout).not.toContain('ABCDEF');
+  it('prefers whichever refresh token expires later', () => {
+    expect(newerCredentials(creds(3), creds(6, 'rotated'))).toMatchObject({ source: 'cache' });
+    expect(newerCredentials(creds(7, 'relogin'), creds(6))).toMatchObject({ source: 'secret' });
+    expect(newerCredentials(creds(3), null)).toMatchObject({ source: 'secret' });
   });
 
-  it('recognises the Even Hub login pasted into the wrong secret', () => {
-    const r = check(1, Buffer.from('access_token: a\nrefresh_token: b\n').toString('base64'));
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('belongs in EVENHUB_CREDENTIALS_B64');
-  });
+  /** Run restore -> (simulated CLI rotation) -> save -> restore, like two CI runs. */
+  it('carries rotated tokens from one run to the next', () => {
+    const work = mkdtempSync(join(tmpdir(), 'sess-'));
+    const env = {
+      ...process.env, GITHUB_ACTIONS: '', XDG_CONFIG_HOME: join(work, 'cfg'),
+      EVENHUB_SESSION_FILE: join(work, 'cache', 'state.enc'), EVENHUB_CREDENTIALS_B64: seedB64,
+    };
+    const run = (script: string) => spawnSync('node', [`scripts/${script}`], { cwd: root, encoding: 'utf8', env });
+    const credFile = join(work, 'cfg', 'evenhub', 'credentials.yaml');
 
-  it('fails early with the GitHub error when the token is bad or missing', () => {
-    const bad = check(1);
-    expect(bad.status).toBe(1);
-    expect(bad.stderr).toContain('Bad credentials');
-    expect(bad.stderr).toContain('unrecognised format');
-    expect(check(0, '').status).toBe(1);
+    expect(run('restore-credentials.mjs').stdout).toContain('from the EVENHUB_CREDENTIALS_B64 secret');
+    writeFileSync(credFile, creds(7, 'rotated')); // the CLI refreshed and rotated the tokens
+    expect(run('save-session.mjs').status).toBe(0);
+    writeFileSync(credFile, 'gone'); // next run starts on a fresh runner
+
+    const second = run('restore-credentials.mjs');
+    expect(second.stdout).toContain('session cache');
+    expect(readFileSync(credFile, 'utf8')).toContain('access_token: rotated');
   });
 });

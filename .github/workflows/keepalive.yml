@@ -34,11 +34,13 @@ jobs:
 
       - run: npm ci
 
-      # Fail before any Even Hub call if refreshed tokens couldn't be saved.
-      - name: Check secret writer token
-        env:
-          GH_TOKEN: ${{ secrets.EVENHUB_SECRET_WRITER_TOKEN }}
-        run: bash scripts/save-credentials.sh --check
+      # The newest Even Hub session (rotated tokens), encrypted; see scripts/save-session.mjs.
+      - name: Restore Even Hub session cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .evenhub-session
+          key: evenhub-session-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: evenhub-session-
 
       - name: Restore Even Hub credentials
         id: creds
@@ -60,13 +62,21 @@ jobs:
           fi
           echo "Session OK."
 
-      - name: Save refreshed Even Hub credentials
+      # The CLI rotates the refresh token when it refreshes: keep the newest
+      # session for the next run. Runs even if the upload failed.
+      - name: Save Even Hub session
         if: always() && steps.creds.outcome == 'success'
         env:
           EVENHUB_CREDENTIALS_B64: ${{ secrets.EVENHUB_CREDENTIALS_B64 }}
-          GH_TOKEN: ${{ secrets.EVENHUB_SECRET_WRITER_TOKEN }}
-        run: bash scripts/save-credentials.sh
+        run: node scripts/save-session.mjs
+
+      - name: Store Even Hub session cache
+        if: always() && steps.creds.outcome == 'success' && hashFiles('.evenhub-session/state.enc') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .evenhub-session
+          key: evenhub-session-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Remove credentials
         if: always()
-        run: rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/evenhub"
+        run: rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/evenhub" .evenhub-session
