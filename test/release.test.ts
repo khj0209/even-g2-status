@@ -147,11 +147,14 @@ describe('scripts/restore-credentials.mjs', () => {
     expect(expired.stderr).toContain('expired');
   });
 
-  it('warns when the refresh token expires soon', () => {
-    const soon = Math.floor(Date.now() / 1000) + 3 * 86400;
-    const r = run(`access_token: a\nrefresh_token: ${jwt(soon)}\n`);
-    expect(r.status).toBe(0);
-    expect(r.stderr).toMatch(/expires in [23] day/);
+  it('warns when the refresh token expires within 2 days, not before', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const soon = run(`access_token: a\nrefresh_token: ${jwt(now + 36 * 3600)}\n`);
+    expect(soon.status).toBe(0);
+    expect(soon.stderr).toMatch(/expires in 1 day/);
+    const fine = run(`access_token: a\nrefresh_token: ${jwt(now + 3 * 86400)}\n`);
+    expect(fine.status).toBe(0);
+    expect(fine.stderr).not.toMatch(/expires in/);
   });
 });
 
