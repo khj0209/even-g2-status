@@ -1,0 +1,54 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4f4f2;
+  --card: #fff;
+  --text: #1c1c1c;
+  --muted: #6b6b6b;
+  --accent: #2f7d4f;
+  --border: #e2e2de;
+  font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111; --card: #1b1b1b; --text: #eee; --muted: #9a9a9a; --border: #2c2c2c; --accent: #5fc489; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 12px 12px 48px; background: var(--bg); color: var(--text); font-size: 15px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+.app-header { display: flex; align-items: center; justify-content: space-between; margin: 4px 4px 12px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.row { display: flex; align-items: center; justify-content: space-between; }
+.gap { gap: 8px; justify-content: flex-start; margin-top: 10px; }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--border); color: var(--muted); }
+.hint { color: var(--muted); font-size: 13px; }
+.hint ul { padding-left: 18px; margin: 0; }
+label { display: block; margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+input, select, textarea {
+  display: block; width: 100%; margin-top: 4px; padding: 8px 10px; font: inherit; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+}
+textarea { resize: vertical; }
+details { border-top: 1px solid var(--border); padding: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+button {
+  font: inherit; padding: 8px 14px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; cursor: pointer;
+}
+button.secondary { background: var(--border); color: var(--text); }
+code { font-size: 12px; }
+
+/* Text mirror of what is on the glasses (shown on the phone). */
+.live { font-family: ui-monospace, Menlo, monospace; background: #000; color: #5f5; border-radius: 8px; padding: 10px; }
+.live div { min-height: 1.4em; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+
+/* Browser preview of the 576x288 display. */
+.preview { margin-top: 10px; }
+.g2-screen { position: relative; width: 100%; background: #000; border-radius: 10px; overflow: hidden; }
+.g2-text {
+  position: absolute; color: #6f6; padding: 0 1.2%; white-space: pre; overflow: hidden;
+  font-size: clamp(9px, 3.2vw, 20px); display: flex; align-items: center;
+}
+.g2-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+.g2-controls label { display: flex; gap: 4px; align-items: center; margin: 0; }
+.g2-controls input[type='number'] { width: 64px; margin: 0; }
+.g2-controls input[type='checkbox'] { width: auto; margin: 0; }
+.g2-controls select { width: auto; margin: 0; }

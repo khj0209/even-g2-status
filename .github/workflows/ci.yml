@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: node scripts/version.mjs check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Pack .ehpk
+        run: npx --no-install evenhub pack app.json dist -o g2-status.ehpk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g2-status-${{ github.sha }}
+          path: g2-status.ehpk
+          retention-days: 14

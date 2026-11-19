@@ -1,0 +1,28 @@
+{
+  "package_id": "com.khj0209.g2status",
+  "edition": "202601",
+  "name": "G2 Status",
+  "version": "0.1.0",
+  "min_app_version": "2.2.10",
+  "min_sdk_version": "0.0.16",
+  "entrypoint": "index.html",
+  "permissions": [
+    {
+      "name": "network",
+      "desc": "날씨, 일정, 교통, 시세, CI 상태를 불러오기 위해 네트워크에 접근합니다.",
+      "whitelist": [
+        "https://api.open-meteo.com",
+        "https://air-quality-api.open-meteo.com",
+        "https://api.github.com",
+        "https://api.upbit.com",
+        "https://open.er-api.com",
+        "http://swopenapi.seoul.go.kr"
+      ]
+    },
+    {
+      "name": "location",
+      "desc": "현재 위치의 날씨와 출퇴근/사무실 상황을 판단하기 위해 위치를 사용합니다."
+    }
+  ],
+  "supported_languages": ["ko", "en"]
+}
