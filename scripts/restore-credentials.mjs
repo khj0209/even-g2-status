@@ -4,7 +4,9 @@
 // terminal, so CI reuses a CI-only session created by `npm run ci-login`.
 //
 // Two sources, newest wins (by refresh-token expiry):
-//  - the EVENHUB_CREDENTIALS_B64 secret (set by ci-login), and
+//  - the EVENHUB_CREDENTIALS_B64 secret (set by ci-login),
+//  - EVENHUB_EXTRA_CREDENTIALS_B64: any other secret the ci-login output may have been
+//    pasted into by mistake (the workflows pass the old EVENHUB_SECRET_WRITER_TOKEN), and
 //  - the encrypted session the previous run left in the Actions cache
 //    (EVENHUB_SESSION_FILE, default .evenhub-session/state.enc), which holds the
 //    rotated tokens. See scripts/save-session.mjs.
@@ -24,17 +26,32 @@ if (!b64) {
   error('EVENHUB_CREDENTIALS_B64 secret is not set. Run `npm run ci-login -- --set` locally (creates a CI-only session).');
   process.exit(1);
 }
-const seed = Buffer.from(b64, 'base64').toString('utf8');
-if (!readYamlField(seed, 'refresh_token') || !readYamlField(seed, 'access_token')) {
+const decode = (v) => {
+  const text = Buffer.from((v ?? '').trim(), 'base64').toString('utf8');
+  return readYamlField(text, 'refresh_token') && readYamlField(text, 'access_token') ? text : null;
+};
+const seed = decode(b64);
+const extra = decode(process.env.EVENHUB_EXTRA_CREDENTIALS_B64);
+if (!seed && !extra) {
   error('EVENHUB_CREDENTIALS_B64 does not decode to a valid credentials.yaml (missing tokens). Run `npm run ci-login -- --set` locally.');
   process.exit(1);
 }
 
 const sessionFile = process.env.EVENHUB_SESSION_FILE || '.evenhub-session/state.enc';
 const cached = existsSync(sessionFile) ? decryptSession(readFileSync(sessionFile), sessionKey(b64)) : null;
-if (existsSync(sessionFile) && !cached) console.log('Cached session is from an older ci-login; using the secret.');
-const { yaml, source } = newerCredentials(seed, cached);
-console.log(`Using Even Hub credentials from the ${source === 'cache' ? 'session cache (rotated tokens)' : 'EVENHUB_CREDENTIALS_B64 secret'}.`);
+if (existsSync(sessionFile) && !cached) console.log('Cached session is from an older ci-login; ignoring it.');
+let pick = newerCredentials(seed ?? extra, cached);
+if (seed && extra) {
+  const other = newerCredentials(pick.yaml, extra);
+  if (other.source === 'cache') pick = { yaml: extra, source: 'extra' };
+}
+const { yaml, source } = pick;
+const label = {
+  cache: 'session cache (rotated tokens)',
+  secret: seed ? 'EVENHUB_CREDENTIALS_B64 secret' : 'EVENHUB_SECRET_WRITER_TOKEN secret',
+  extra: 'EVENHUB_SECRET_WRITER_TOKEN secret (a newer ci-login was pasted there)',
+}[source];
+console.log(`Using Even Hub credentials from the ${label}.`);
 const refresh = readYamlField(yaml, 'refresh_token');
 
 // Diagnostics (no secrets): when were these tokens issued? Helps tell a stale

@@ -46,6 +46,8 @@ jobs:
         id: creds
         env:
           EVENHUB_CREDENTIALS_B64: ${{ secrets.EVENHUB_CREDENTIALS_B64 }}
+          # A ci-login pasted into the old writer-token secret is used too if it's newer.
+          EVENHUB_EXTRA_CREDENTIALS_B64: ${{ secrets.EVENHUB_SECRET_WRITER_TOKEN }}
         run: node scripts/restore-credentials.mjs
 
       - name: Refresh session

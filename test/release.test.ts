@@ -262,6 +262,35 @@ describe('encrypted Even Hub session cache', () => {
     expect(newerCredentials(creds(3), null)).toMatchObject({ source: 'secret' });
   });
 
+  it('uses a newer ci-login pasted into the old writer-token secret', () => {
+    const work = mkdtempSync(join(tmpdir(), 'extra-'));
+    const r = spawnSync('node', ['scripts/restore-credentials.mjs'], {
+      cwd: root, encoding: 'utf8',
+      env: {
+        ...process.env, GITHUB_ACTIONS: '', XDG_CONFIG_HOME: join(work, 'cfg'),
+        EVENHUB_SESSION_FILE: join(work, 'none.enc'), EVENHUB_CREDENTIALS_B64: seedB64,
+        EVENHUB_EXTRA_CREDENTIALS_B64: Buffer.from(creds(7, 'fresh')).toString('base64'),
+      },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('a newer ci-login was pasted there');
+    expect(readFileSync(join(work, 'cfg', 'evenhub', 'credentials.yaml'), 'utf8')).toContain('access_token: fresh');
+  });
+
+  it('ignores a real GitHub token in the extra secret', () => {
+    const work = mkdtempSync(join(tmpdir(), 'extra2-'));
+    const r = spawnSync('node', ['scripts/restore-credentials.mjs'], {
+      cwd: root, encoding: 'utf8',
+      env: {
+        ...process.env, GITHUB_ACTIONS: '', XDG_CONFIG_HOME: join(work, 'cfg'),
+        EVENHUB_SESSION_FILE: join(work, 'none.enc'), EVENHUB_CREDENTIALS_B64: seedB64,
+        EVENHUB_EXTRA_CREDENTIALS_B64: 'github_pat_1234567890abcdef',
+      },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('from the EVENHUB_CREDENTIALS_B64 secret');
+  });
+
   /** Run restore -> (simulated CLI rotation) -> save -> restore, like two CI runs. */
   it('carries rotated tokens from one run to the next', () => {
     const work = mkdtempSync(join(tmpdir(), 'sess-'));
