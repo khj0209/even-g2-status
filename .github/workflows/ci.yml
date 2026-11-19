@@ -27,6 +27,8 @@ jobs:
 
       - run: npm ci
       - run: node scripts/version.mjs check
+      - name: Check store icon
+        run: node scripts/check-icon.mjs store/icon.png
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

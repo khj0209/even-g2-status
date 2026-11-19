@@ -125,7 +125,7 @@ git push --follow-tags     # → Release 워크플로 실행
 - 릴리스 노트(=Even Hub 변경 내역, 최대 500자)는 지난 태그 이후 커밋 제목으로 자동 생성됩니다.
   직접 쓰고 싶으면 `git tag -a v0.2.0 -m "변경 내용"`처럼 메시지 있는 태그를 쓰세요.
 - 같은 버전으로 다시 실행해도 안전합니다 (이미 업로드된 버전은 건너뜀). 실패하면 Actions에서 **Re-run** 하면 됩니다.
-- 스토어 소개문은 `store/description.md`, 아이콘은 `store/icon.png`(24×24 PNG, 지금은 임시 아이콘)입니다.
+- 스토어 소개문은 `store/description.md`, 아이콘은 `store/icon.png`입니다. 아이콘 규칙: 24×24, 보이는 픽셀은 불투명 `#F4F4F4`, 나머지는 완전 투명, 2×2 블록 단위 (12×12 도트를 2배 확대). `python3 scripts/make-icon.py`로 다시 그리고 `node scripts/check-icon.mjs`로 검사할 수 있습니다.
 - **공개(public) 배포는 Even 심사가 필요해서 CLI로 자동화할 수 없습니다.** beta에서 확인한 뒤 Even Hub 개발자
   포털에서 심사를 요청하세요. 베타 테스터는 `npx evenhub testers add 이메일`로 초대합니다.
 
