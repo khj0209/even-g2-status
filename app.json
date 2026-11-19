@@ -2,7 +2,7 @@
   "package_id": "com.khj0209.g2status",
   "edition": "202601",
   "name": "G2 Status",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "min_app_version": "2.2.10",
   "min_sdk_version": "0.0.16",
   "entrypoint": "index.html",
@@ -24,5 +24,8 @@
       "desc": "현재 위치의 날씨와 출퇴근/사무실 상황을 판단하기 위해 위치를 사용합니다."
     }
   ],
-  "supported_languages": ["ko", "en"]
+  "supported_languages": [
+    "ko",
+    "en"
+  ]
 }
