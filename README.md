@@ -89,24 +89,31 @@ npm run pack      # → g2-status.ehpk
 ### 1회 설정
 
 `evenhub login`은 비밀번호를 대화형으로 묻기 때문에 CI에서 직접 로그인할 수 없습니다.
-그래서 **내 컴퓨터에서 로그인한 자격 증명을 GitHub Secret으로 넘깁니다.**
+그래서 **CI 전용 로그인 세션을 하나 따로 만들어** GitHub Secret으로 넘깁니다.
 
-```bash
-npx evenhub login                 # 내 컴퓨터에서 한 번
-npm run credentials --silent      # base64 한 줄 출력
-```
+> ⚠️ `~/.config/evenhub/credentials.yaml`을 그대로 복사해 넣지 마세요. CLI는 토큰을 갱신할 때마다
+> refresh token을 새로 바꾸기 때문에, 같은 세션을 두 곳(내 PC나 다른 도구, 그리고 CI)이 쓰면
+> 먼저 갱신한 쪽이 다른 쪽 토큰을 무효로 만들어 서로 계속 끊깁니다.
+> `npm run ci-login`은 임시 폴더에서 로그인하므로 기존 자격 증명 파일은 건드리지 않습니다.
 
-1. GitHub 저장소 → Settings → Secrets and variables → Actions → **New repository secret**
-   - 이름 `EVENHUB_CREDENTIALS_B64`, 값은 위에서 출력된 한 줄
-   - `gh` CLI가 있다면: `npm run credentials --silent | gh secret set EVENHUB_CREDENTIALS_B64`
-2. (선택) Settings → Environments → `evenhub` 환경에 **Required reviewers**를 걸면 업로드마다 승인 후 진행됩니다.
-3. (선택) Actions **Variables**
+1. **CI 전용 세션 만들기**
+   ```bash
+   npm run ci-login -- --set     # gh CLI로 EVENHUB_CREDENTIALS_B64 secret에 바로 저장
+   # gh가 없으면: npm run ci-login → 출력된 한 줄을 Settings → Secrets → Actions에 직접 등록
+   ```
+   임시 폴더의 사본은 끝나면 삭제되고, 세션은 GitHub secret에만 남습니다.
+2. **갱신된 토큰을 secret에 다시 저장할 토큰 만들기** (`EVENHUB_SECRET_WRITER_TOKEN`)
+   - GitHub → Settings → Developer settings → Fine-grained tokens → 이 저장소만 선택 → Repository permissions **Secrets: Read and write**
+   - 만든 토큰을 이 저장소의 secret `EVENHUB_SECRET_WRITER_TOKEN`으로 등록
+   - Release 워크플로가 Even Hub 토큰을 갱신하면 새 토큰을 `EVENHUB_CREDENTIALS_B64`에 다시 저장합니다.
+     이게 없으면 첫 갱신 이후 secret이 무효가 되어 매번 `ci-login`을 다시 해야 합니다.
+3. (선택) Settings → Environments → `evenhub` 환경에 **Required reviewers**를 걸면 업로드마다 승인 후 진행됩니다.
+4. (선택) Actions **Variables**
    - `EVENHUB_BETA` = `false`: beta 채널 지정 생략
    - `EVENHUB_TAGLINE`: 첫 배포 시 스토어 한 줄 소개 (기본: "하루 종일 켜두는 상태표시창")
 
-이 secret은 내 Even Hub 계정에 업로드할 수 있는 권한이니 비밀번호처럼 다루세요.
-리프레시 토큰 만료 14일 전부터 워크플로에 경고가 뜨고, 만료되면 재로그인 안내와 함께 실패합니다.
-그때 위 두 줄을 다시 실행해 secret을 갱신하면 됩니다.
+릴리스는 한 번에 하나씩만 돌도록 되어 있어(concurrency) CI 안에서 토큰 갱신이 겹치지 않습니다.
+refresh token 만료 14일 전부터 경고가 뜨고, 만료되거나 세션이 끊기면 `npm run ci-login -- --set` 안내와 함께 실패합니다.
 
 ### 릴리스하기
 

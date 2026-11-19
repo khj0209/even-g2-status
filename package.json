@@ -13,7 +13,7 @@
     "qr": "evenhub qr --port 5173",
     "pack": "npm run build && evenhub pack app.json dist -o g2-status.ehpk",
     "version": "node scripts/version.mjs sync && git add app.json",
-    "credentials": "node scripts/export-credentials.mjs"
+    "ci-login": "node scripts/ci-login.mjs"
   },
   "engines": {
     "node": "^20.17.0 || >=22.13.0"

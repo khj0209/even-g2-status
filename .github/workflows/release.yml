@@ -66,6 +66,7 @@ jobs:
         run: node scripts/release-notes.mjs "${TAG:-v${{ steps.pack.outputs.version }}}" release-notes.md
 
       - name: Restore Even Hub credentials
+        id: creds
         env:
           EVENHUB_CREDENTIALS_B64: ${{ secrets.EVENHUB_CREDENTIALS_B64 }}
         run: node scripts/restore-credentials.mjs
@@ -76,6 +77,15 @@ jobs:
           EVENHUB_BETA: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.beta) || vars.EVENHUB_BETA || 'true' }}
           EVENHUB_TAGLINE: ${{ vars.EVENHUB_TAGLINE }}
         run: bash scripts/publish.sh "${{ steps.pack.outputs.file }}" "${{ steps.pack.outputs.version }}" release-notes.md
+
+      # The CLI rotates the refresh token when it refreshes; store the new one
+      # so the next release can still log in. Runs even if the upload failed.
+      - name: Save refreshed Even Hub credentials
+        if: always() && steps.creds.outcome == 'success'
+        env:
+          EVENHUB_CREDENTIALS_B64: ${{ secrets.EVENHUB_CREDENTIALS_B64 }}
+          GH_TOKEN: ${{ secrets.EVENHUB_SECRET_WRITER_TOKEN }}
+        run: bash scripts/save-credentials.sh
 
       - name: GitHub Release
         if: env.TAG != ''

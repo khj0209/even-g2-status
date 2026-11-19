@@ -2,7 +2,7 @@
 // Writes the Even Hub CLI credentials from the EVENHUB_CREDENTIALS_B64 secret
 // to $XDG_CONFIG_HOME/evenhub/credentials.yaml and warns before the refresh
 // token expires. `evenhub login` needs an interactive terminal, so CI reuses
-// credentials created by a local login (see README "자동 배포").
+// a CI-only session created by `npm run ci-login` (see README "자동 배포").
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -15,7 +15,7 @@ const warn = (m) => console.error(gh ? `::warning title=Even Hub credentials::${
 
 const b64 = (process.env.EVENHUB_CREDENTIALS_B64 ?? '').trim();
 if (!b64) {
-  error('EVENHUB_CREDENTIALS_B64 secret is not set. Run `npm run credentials` locally after `evenhub login` and add the output as a repository secret.');
+  error('EVENHUB_CREDENTIALS_B64 secret is not set. Run `npm run ci-login -- --set` locally (creates a CI-only session).');
   process.exit(1);
 }
 const yaml = Buffer.from(b64, 'base64').toString('utf8');
@@ -29,10 +29,10 @@ const exp = jwtExpiry(refresh);
 if (exp !== null) {
   const days = (exp * 1000 - Date.now()) / 86_400_000;
   if (days <= 0) {
-    error('The Even Hub refresh token has expired. Run `evenhub login` locally, then update the secret with `npm run credentials`.');
+    error('The Even Hub refresh token has expired. Run `npm run ci-login -- --set` locally to create a new CI-only session.');
     process.exit(2);
   }
-  if (days < WARN_DAYS) warn(`The Even Hub refresh token expires in ${Math.floor(days)} day(s). Re-login and update the secret soon.`);
+  if (days < WARN_DAYS) warn(`The Even Hub refresh token expires in ${Math.floor(days)} day(s). Run 'npm run ci-login -- --set' soon.`);
   else console.log(`Refresh token valid for ${Math.floor(days)} more days.`);
 }
 

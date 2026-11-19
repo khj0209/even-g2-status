@@ -35,7 +35,7 @@ explain() {
   local msg
   msg=$(node -e 'try{const j=JSON.parse(process.argv[1]);console.log(`${j.message}${j.hint?" — "+j.hint:""}`)}catch{console.log(process.argv[1])}' "$OUT")
   case $CODE in
-    2) gha error "Even Hub login expired or invalid. Run 'npx evenhub login' locally and update the EVENHUB_CREDENTIALS_B64 secret (npm run credentials). ($msg)" ;;
+    2) gha error "Even Hub login expired or invalid. Run 'npm run ci-login -- --set' locally to create a new CI-only session. ($msg)" ;;
     *) gha error "evenhub $1 failed (exit $CODE): $msg" ;;
   esac
   exit "$CODE"

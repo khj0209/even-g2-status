@@ -93,7 +93,7 @@ describe('scripts/publish.sh', () => {
   it('fails with a re-login hint when credentials are invalid', () => {
     const r = publish({ FAKE_LS_EXIT: '2' });
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain('EVENHUB_CREDENTIALS_B64');
+    expect(r.stderr).toContain('npm run ci-login');
   });
 
   it('propagates upload failures', () => {
@@ -148,5 +148,88 @@ describe('scripts/restore-credentials.mjs', () => {
 describe('scripts/version.mjs', () => {
   it('passes for the committed versions', () => {
     expect(execFileSync('node', ['scripts/version.mjs', 'check'], { cwd: root, encoding: 'utf8' })).toContain('OK');
+  });
+});
+
+describe('scripts/save-credentials.sh', () => {
+  /** Fake `gh` that records argv and stdin. */
+  function setup(fileContent: string | null, secretContent: string, withToken = true) {
+    const dir = mkdtempSync(join(tmpdir(), 'save-'));
+    if (fileContent !== null) {
+      execFileSync('mkdir', ['-p', join(dir, 'evenhub')]);
+      writeFileSync(join(dir, 'evenhub', 'credentials.yaml'), fileContent);
+    }
+    const gh = join(dir, 'gh');
+    writeFileSync(gh, `#!/usr/bin/env bash\necho "$*" > "${dir}/gh.args"\ncat > "${dir}/gh.stdin"\n`);
+    chmodSync(gh, 0o755);
+    const r = spawnSync('bash', ['scripts/save-credentials.sh'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GITHUB_ACTIONS: '',
+        GITHUB_REPOSITORY: 'me/repo',
+        XDG_CONFIG_HOME: dir,
+        GH_BIN: gh,
+        GH_TOKEN: withToken ? 'pat' : '',
+        EVENHUB_CREDENTIALS_B64: Buffer.from(secretContent).toString('base64'),
+      },
+    });
+    const read = (f: string) => (existsSync(join(dir, f)) ? readFileSync(join(dir, f), 'utf8') : null);
+    return { ...r, args: read('gh.args'), stdin: read('gh.stdin') };
+  }
+
+  it('does nothing when the tokens were not refreshed', () => {
+    const r = setup('refresh_token: a\n', 'refresh_token: a\n');
+    expect(r.status).toBe(0);
+    expect(r.args).toBeNull();
+  });
+
+  it('writes rotated tokens back via stdin, never argv', () => {
+    const r = setup('refresh_token: NEW\n', 'refresh_token: old\n');
+    expect(r.status).toBe(0);
+    expect(r.args!.trim()).toBe('secret set EVENHUB_CREDENTIALS_B64 --repo me/repo');
+    expect(Buffer.from(r.stdin!, 'base64').toString()).toBe('refresh_token: NEW\n');
+  });
+
+  it('fails loudly if tokens rotated but no writer token is configured', () => {
+    const r = setup('refresh_token: NEW\n', 'refresh_token: old\n', false);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('EVENHUB_SECRET_WRITER_TOKEN');
+  });
+
+  it('is a no-op without a credentials file', () => {
+    expect(setup(null, 'x').status).toBe(0);
+  });
+});
+
+describe('scripts/ci-login.mjs', () => {
+  it('logs in under a temporary config dir and never touches the real one', () => {
+    // Fake CLI in place of node_modules/@evenrealities/evenhub-cli/main.js is not possible
+    // without editing node_modules, so run the script against a copied tree.
+    const tree = mkdtempSync(join(tmpdir(), 'cilogin-'));
+    execFileSync('mkdir', ['-p', join(tree, 'scripts'), join(tree, 'node_modules/@evenrealities/evenhub-cli')]);
+    writeFileSync(join(tree, 'scripts/ci-login.mjs'), readFileSync(join(root, 'scripts/ci-login.mjs')));
+    writeFileSync(
+      join(tree, 'node_modules/@evenrealities/evenhub-cli/main.js'),
+      `const fs=require('fs'),p=require('path');const d=p.join(process.env.XDG_CONFIG_HOME,'evenhub');
+       fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'credentials.yaml'),'refresh_token: ci-only\\n');
+       fs.writeFileSync(process.env.SPY,process.env.XDG_CONFIG_HOME+' '+process.argv.slice(2).join(' '));`,
+    );
+    writeFileSync(join(tree, 'node_modules/@evenrealities/evenhub-cli/package.json'), '{"type":"commonjs"}');
+    const realHome = mkdtempSync(join(tmpdir(), 'realcfg-'));
+    const spy = join(tree, 'spy');
+    const r = spawnSync('node', ['scripts/ci-login.mjs', '-e', 'me@example.com'], {
+      cwd: tree,
+      encoding: 'utf8',
+      env: { ...process.env, XDG_CONFIG_HOME: realHome, SPY: spy },
+    });
+    expect(r.status).toBe(0);
+    expect(Buffer.from(r.stdout.trim(), 'base64').toString()).toBe('refresh_token: ci-only\n');
+    const [usedHome, ...argv] = readFileSync(spy, 'utf8').split(' ');
+    expect(argv).toEqual(['login', '-e', 'me@example.com']);
+    expect(usedHome).not.toBe(realHome);
+    expect(existsSync(usedHome)).toBe(false); // temporary copy removed
+    expect(existsSync(join(realHome, 'evenhub'))).toBe(false); // real config untouched
   });
 });
