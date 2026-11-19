@@ -1,3 +1,4 @@
+import yaml from 'js-yaml';
 import zlib from 'node:zlib';
 // Pure helpers used by the release scripts (unit-tested in test/release.test.ts).
 
@@ -26,15 +27,24 @@ export function notesFromCommits(subjects, version) {
   const lines = subjects
     .map((s) => s.trim())
     .filter(Boolean)
-    .filter((s) => !/^v?\d+\.\d+\.\d+$/.test(s) && !/^(chore\(release\)|release)\b/i.test(s))
+    .filter((s) => !/^v?\d+\.\d+\.\d+$/.test(s) && !/^(chore\(release\)|release)\b/i.test(s) && !/^initial commit$/i.test(s))
     .map((s) => `- ${s}`);
   return lines.length ? lines.join('\n') : `G2 Status ${version}`;
 }
 
-/** Read a field from the CLI's simple credentials.yaml without a YAML dependency. */
-export function readYamlField(yaml, key) {
-  const m = new RegExp(`^${key}:\\s*(.+?)\\s*$`, 'm').exec(yaml);
-  return m ? m[1].replace(/^(['"])(.*)\1$/, '$2') : null;
+/**
+ * Read a field from the CLI's credentials.yaml. Uses js-yaml, the same library the
+ * CLI writes it with: long tokens are dumped in folded style (`key: >-` with the
+ * value on the next line), so a line-based regex is not enough.
+ */
+export function readYamlField(text, key) {
+  try {
+    const doc = yaml.load(text);
+    const v = doc && typeof doc === 'object' ? doc[key] : undefined;
+    return v === undefined || v === null ? null : String(v);
+  } catch {
+    return null;
+  }
 }
 
 /** Decoded JWT payload, or null if the token isn't a JWT. */

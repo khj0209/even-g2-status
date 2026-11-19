@@ -26,6 +26,15 @@ describe('release helpers', () => {
     expect(notesFromCommits(['Add transit widget', '0.2.0', '', 'Fix ICS parsing'], '0.2.0'))
       .toBe('- Add transit widget\n- Fix ICS parsing');
     expect(notesFromCommits(['0.2.0'], '0.2.0')).toBe('G2 Status 0.2.0');
+    expect(notesFromCommits(['Initial commit', 'Add x'], '0.2.0')).toBe('- Add x');
+  });
+
+  it('reads tokens the way the CLI writes them (js-yaml folded style)', () => {
+    const long = 'eyJ' + 'a'.repeat(200) + '.eyJ' + 'b'.repeat(100) + '.sig';
+    const folded = `email: me@example.com\nrole: 1\naccess_token: >-\n  ${long}\nrefresh_token: >-\n  ${long}x\n`;
+    expect(readYamlField(folded, 'access_token')).toBe(long);
+    expect(readYamlField(folded, 'refresh_token')).toBe(long + 'x');
+    expect(readYamlField('not: [valid', 'x')).toBeNull();
   });
 
   it('reads credentials yaml and JWT expiry', () => {
@@ -209,6 +218,16 @@ describe('scripts/save-credentials.sh', () => {
     const r = setup('access_token: x2\nrefresh_token: NEW\n', 'access_token: x\nrefresh_token: old\n', false);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('EVENHUB_SECRET_WRITER_TOKEN');
+  });
+
+  it('detects rotated tokens in the folded format the CLI actually writes', () => {
+    const tok = (t: string) => 'eyJ' + t.repeat(120) + '.eyJ' + t.repeat(80) + '.sig';
+    const cli = (a: string, r: string) => `email: me@example.com\naccess_token: >-\n  ${a}\nrefresh_token: >-\n  ${r}\n`;
+    const same = setup(cli(tok('a'), tok('b')), cli(tok('a'), tok('b')));
+    expect(same.args).toBeNull();
+    const rotated = setup(cli(tok('c'), tok('d')), cli(tok('a'), tok('b')));
+    expect(rotated.status).toBe(0);
+    expect(rotated.args).not.toBeNull();
   });
 
   it('is a no-op without a credentials file', () => {
