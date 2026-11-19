@@ -21,7 +21,20 @@ const args = process.argv.slice(2);
 const set = args.includes('--set');
 const passthrough = args.filter((a) => a !== '--set'); // e.g. -e you@example.com
 
-const cli = fileURLToPath(new URL('../node_modules/@evenrealities/evenhub-cli/main.js', import.meta.url));
+const root = fileURLToPath(new URL('..', import.meta.url));
+const cli = join(root, 'node_modules/@evenrealities/evenhub-cli/main.js');
+
+/** owner/repo of THIS checkout, so the secret never lands in another repository. */
+function thisRepo() {
+  const r = spawnSync('git', ['-C', root, 'remote', 'get-url', 'origin'], { encoding: 'utf8' });
+  const m = /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\s*$/.exec(r.stdout ?? '');
+  return m ? m[1] : null;
+}
+const repo = set ? thisRepo() : null;
+if (set && !repo) {
+  console.error('Could not determine this repository from `git remote get-url origin`. Run without --set and add the secret manually.');
+  process.exit(1);
+}
 if (!existsSync(cli)) {
   console.error('Even Hub CLI not installed. Run `npm install` first.');
   process.exit(1);
@@ -44,12 +57,18 @@ try {
   const value = readFileSync(file).toString('base64');
 
   if (set) {
-    const gh = spawnSync('gh', ['secret', 'set', 'EVENHUB_CREDENTIALS_B64'], { input: value, stdio: ['pipe', 'inherit', 'inherit'] });
+    const gh = spawnSync('gh', ['secret', 'set', 'EVENHUB_CREDENTIALS_B64', '--repo', repo], {
+      input: value,
+      stdio: ['pipe', 'inherit', 'inherit'],
+    });
     if (gh.error || gh.status !== 0) {
       console.error('\n`gh secret set` failed. Run without --set and paste the value manually.');
       process.exit(1);
     }
-    console.error('\nEVENHUB_CREDENTIALS_B64 secret updated.');
+    // Show the secret's "updated" time so it's obvious the right repository changed.
+    const list = spawnSync('gh', ['secret', 'list', '--repo', repo], { encoding: 'utf8' });
+    const line = (list.stdout ?? '').split('\n').find((l) => l.startsWith('EVENHUB_CREDENTIALS_B64'));
+    console.error(`\n${repo} 의 EVENHUB_CREDENTIALS_B64 를 갱신했습니다.${line ? `\n  ${line.trim()}` : ''}`);
   } else {
     process.stdout.write(value + '\n');
     console.error('\n위 한 줄을 GitHub → Settings → Secrets and variables → Actions → EVENHUB_CREDENTIALS_B64 에 넣으세요.');

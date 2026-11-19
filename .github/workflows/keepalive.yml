@@ -1,0 +1,66 @@
+name: Even Hub session keep-alive
+
+# Even Hub access tokens last ~10 minutes and refresh tokens ~7 days. Each
+# refresh rotates the refresh token, so this job refreshes the CI-only session
+# once a day and saves the new tokens back to EVENHUB_CREDENTIALS_B64. Without
+# it, a week without releases would expire the session.
+#
+# If this fails, GitHub emails you; run `npm run ci-login -- --set` to start a
+# new session.
+
+on:
+  schedule:
+    - cron: '17 18 * * *' # daily, 03:17 KST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release # never refresh at the same time as a release
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Restore Even Hub credentials
+        id: creds
+        env:
+          EVENHUB_CREDENTIALS_B64: ${{ secrets.EVENHUB_CREDENTIALS_B64 }}
+        run: node scripts/restore-credentials.mjs
+
+      - name: Refresh session
+        env:
+          EVENHUB_API_DEBUG: '1'
+        run: |
+          set +e
+          OUT=$(npx --no-install evenhub self-check --json)
+          CODE=$?
+          set -e
+          if [ "$CODE" -ne 0 ]; then
+            echo "::error title=Even Hub session::Session refresh failed (exit $CODE). Run 'npm run ci-login -- --set' locally."
+            exit "$CODE"
+          fi
+          echo "Session OK."
+
+      - name: Save refreshed Even Hub credentials
+        if: always() && steps.creds.outcome == 'success'
+        env:
+          EVENHUB_CREDENTIALS_B64: ${{ secrets.EVENHUB_CREDENTIALS_B64 }}
+          GH_TOKEN: ${{ secrets.EVENHUB_SECRET_WRITER_TOKEN }}
+        run: bash scripts/save-credentials.sh
+
+      - name: Remove credentials
+        if: always()
+        run: rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/evenhub"

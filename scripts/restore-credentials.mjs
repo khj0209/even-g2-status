@@ -8,7 +8,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { jwtClaims, jwtExpiry, readYamlField } from './release-lib.mjs';
 
-const WARN_DAYS = 14;
+// Even Hub refresh tokens live 7 days; the keep-alive workflow refreshes daily.
+const WARN_DAYS = 2;
 const gh = !!process.env.GITHUB_ACTIONS;
 const error = (m) => console.error(gh ? `::error title=Even Hub credentials::${m}` : m);
 const warn = (m) => console.error(gh ? `::warning title=Even Hub credentials::${m}` : m);
