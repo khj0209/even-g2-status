@@ -35,6 +35,7 @@ class FakeHost implements Host {
   onInput(cb: (a: InputAction) => void) { this.input = cb; return () => {}; }
   onDevice(cb: (s: DeviceState) => void) { this.device = cb; return () => {}; }
   async getLocation() { return null; }
+  async getSpeed() { return null; }
   async load(k: string) { return this.storage.get(k) ?? null; }
   async save(k: string, v: string) { this.storage.set(k, v); }
 
@@ -146,6 +147,37 @@ describe('StatusEngine (classic theme)', () => {
     const again = new StatusEngine(host, { now: () => clock, fetch: offline, manualTicks: true });
     await again.start();
     expect(again.state.daily.water).toBe(1);
+  });
+});
+
+describe('StatusEngine suspend/resume (driving mode)', () => {
+  it('stops sending and ignores input while suspended, then rebuilds the page on resume', async () => {
+    const host = new FakeHost();
+    let clock = new Date(2026, 10, 19, 14, 32);
+    let driveRequests = 0;
+    const engine = new StatusEngine(host, {
+      now: () => clock, fetch: offline, manualTicks: true, renderer: fakeRenderer,
+      onDriveRequest: () => driveRequests++,
+    });
+    await engine.start();
+    await engine.handleInput({ type: 'menu', itemId: MenuId.Drive });
+    expect(driveRequests).toBe(1);
+
+    engine.suspend();
+    const texts = host.updates.length;
+    const images = host.images.length;
+    const pageBefore = host.page;
+    clock = new Date(2026, 10, 19, 14, 40);
+    await engine.tick();
+    await engine.handleInput({ type: 'menu', itemId: MenuId.Water }); // belongs to the Drive HUD now
+    expect(host.updates.length).toBe(texts);
+    expect(host.images.length).toBe(images);
+    expect(engine.state.daily.water).toBe(0);
+
+    await engine.resume();
+    expect(host.page).not.toBe(pageBefore); // page rebuilt
+    expect(host.text(BOX_ID.top)).toBe('» WORK');
+    expect(host.images.length).toBeGreaterThan(images); // full redraw
   });
 });
 

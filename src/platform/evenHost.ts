@@ -153,6 +153,15 @@ export async function createEvenHost(): Promise<Host> {
       }
     },
 
+    async getSpeed() {
+      try {
+        const loc = await bridge.getAppLocation({ accuracy: AppLocationAccuracy.High, timeoutMs: 10000 });
+        return typeof loc?.speed === 'number' && loc.speed >= 0 ? loc.speed : null;
+      } catch {
+        return null;
+      }
+    },
+
     async load(key) {
       const v = await bridge.getLocalStorage(key);
       return v ? v : null;

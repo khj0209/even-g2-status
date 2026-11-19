@@ -87,6 +87,7 @@ export function mirrorHost(host: Host, screen: Screen): Host {
   return {
     ...host,
     kind: host.kind,
+    getSpeed: () => host.getSpeed(),
     async createPage(page, menu) {
       screen.createPage(page, menu);
       return host.createPage(page, menu);

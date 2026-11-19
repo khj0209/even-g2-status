@@ -18,6 +18,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -173,6 +174,35 @@ kbd {
 }
 
 #save-status { font: 11px var(--mono); letter-spacing: 0.1em; color: var(--accent); }
+
+/* ---------------------------------------------------------------- drive */
+
+.drive-toggle {
+  width: 100%; display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 12px 14px;
+}
+.drive-toggle small { font: 12px var(--sans); letter-spacing: 0; color: var(--muted); text-transform: none; margin-left: auto; }
+.drive-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.drive-toggle[aria-pressed='true'] { background: rgba(255, 179, 71, 0.16); border-color: var(--warn); color: var(--warn); }
+.drive-toggle[aria-pressed='true'] .drive-dot { background: var(--warn); box-shadow: 0 0 10px var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+.drive-canvas { display: block; aspect-ratio: 576 / 288; }
+.drive-canvas[hidden], .screen-frame[hidden] { display: none; }
+.mono { font-family: var(--mono); font-size: 11px; }
+.pills { display: flex; gap: 6px; }
+.pill { opacity: 0.4; }
+.pill.on { opacity: 1; box-shadow: 0 0 8px rgba(79, 227, 255, 0.4); }
+.inline-form { display: flex; gap: 8px; margin-top: 8px; }
+.inline-form input { margin: 0; }
+.inline-form button { white-space: nowrap; flex: none; }
+.results, .trips { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.results li { display: flex; gap: 6px; }
+.results .place { flex: 1; text-align: left; text-transform: none; letter-spacing: 0; font: 600 13px var(--sans); }
+.results .small, .buttons-inline button { padding: 6px 10px; font-size: 11px; }
+.trips li { font: 12px var(--mono); color: var(--muted); border-left: 2px solid var(--line-strong); padding-left: 8px; }
+.favorites { display: grid; gap: 8px; margin: 10px 0; }
+.buttons-inline { display: flex; gap: 6px; }
+button.danger { color: #ff7a7a; border-color: rgba(255, 122, 122, 0.45); background: rgba(255, 122, 122, 0.08); }
+label.check { display: flex; align-items: center; gap: 8px; color: var(--text); }
+label.check input { width: auto; margin: 0; accent-color: var(--accent); }
 
 @media (prefers-reduced-motion: reduce) {
   .logo::after, .link i { animation: none; }

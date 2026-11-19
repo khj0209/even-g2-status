@@ -72,6 +72,15 @@ export function createPreviewHost(screen: Screen, controls: HTMLElement): Host {
           { timeout: 5000 },
         );
       }),
+    getSpeed: () =>
+      new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve(null);
+        navigator.geolocation.getCurrentPosition(
+          (p) => resolve(p.coords.speed),
+          () => resolve(null),
+          { timeout: 8000, enableHighAccuracy: true },
+        );
+      }),
     async load(key) {
       return localStorage.getItem(key);
     },

@@ -40,6 +40,8 @@ export interface Settings {
   workoutKeywords: string[];
   /** Advanced: per-mode layout override. Missing modes use the defaults. */
   layouts: Partial<Record<Mode, Layout>>;
+  /** Driving mode (Drive HUD): start automatically when moving at least `autoKmh`. */
+  drive: { auto: boolean; autoKmh: number };
 }
 
 export const DEFAULT_LAYOUTS: Record<Mode, Layout> = {
@@ -78,6 +80,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tracker: 'water\nfx USD KRW',
   workoutKeywords: ['운동', '헬스', 'PT', '러닝', 'workout', 'gym'],
   layouts: {},
+  drive: { auto: true, autoKmh: 20 },
 };
 
 export function layoutFor(settings: Settings, mode: Mode): Layout {

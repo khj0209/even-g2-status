@@ -24,11 +24,16 @@
         <span id="mode-label" class="tag"></span>
       </div>
       <div id="screen" class="screen-frame"></div>
+      <canvas id="preview" class="screen-frame drive-canvas" aria-label="운전 HUD 미리보기" hidden></canvas>
+      <p id="map-status" class="hint mono" hidden></p>
       <div id="preview-controls" class="g2-controls" hidden></div>
     </section>
 
     <section class="panel">
       <h2><span class="idx">02</span> MODE <small>화면 모드</small></h2>
+      <button id="drive-toggle" type="button" class="drive-toggle" aria-pressed="false">
+        <span class="drive-dot"></span><b>DRIVE</b><small id="drive-state">운전 모드 꺼짐</small>
+      </button>
       <div id="modes" class="chips" role="radiogroup" aria-label="화면 모드"></div>
       <div class="actions">
         <button data-menu="3">POMODORO<small>뽀모도로</small></button>
@@ -38,8 +43,103 @@
       </div>
     </section>
 
+
+    <section class="panel" id="drive-panel">
+      <div class="row">
+        <h2><span class="idx">03</span> DRIVE <small>운전 모드 (Drive HUD)</small></h2>
+        <span class="pills"><span id="pill-glasses" class="tag pill">GLASSES</span> <span id="pill-gps" class="tag pill">GPS</span></span>
+      </div>
+      <p class="hint">
+        운전 중에는 글래스 화면이 Drive HUD(속도·제한속도·단속 카메라·길 안내·미니맵)로 바뀌고, 운전 모드가 끝나면 상태 HUD로 돌아옵니다.
+        글래스 메뉴 "운전 모드"로 시작하고, 운전 화면의 메뉴 "운전 모드 끝내기"나 두 번 탭으로 끝냅니다.
+      </p>
+      <p id="bg-report" class="hint mono"></p>
+
+      <details open>
+        <summary>길 안내</summary>
+        <form id="search-form" class="inline-form">
+          <input id="search-input" type="search" placeholder="목적지 검색" autocomplete="off" enterkeyhint="search" />
+          <button type="submit">검색</button>
+        </form>
+        <ul id="results" class="results"></ul>
+        <div id="nav-active" class="row" hidden>
+          <span id="nav-dest"></span>
+          <button id="nav-stop" type="button" class="danger">안내 종료</button>
+        </div>
+        <p id="nav-message" class="hint"></p>
+        <div class="favorites">
+          <div class="row">
+            <span>집 <small id="home-name" class="dim">미등록</small></span>
+            <span class="buttons-inline">
+              <button id="home-go" type="button">안내</button>
+              <button id="home-clear" type="button" class="danger">지우기</button>
+            </span>
+          </div>
+          <div class="row">
+            <span>회사 <small id="work-name" class="dim">미등록</small></span>
+            <span class="buttons-inline">
+              <button id="work-go" type="button">안내</button>
+              <button id="work-clear" type="button" class="danger">지우기</button>
+            </span>
+          </div>
+        </div>
+        <p class="hint">검색 결과의 "집"·"회사" 버튼으로 등록합니다. 운전 화면의 글래스 메뉴 "집으로"·"회사로"·"안내 종료"로 휴대폰 없이 안내를 시작하거나 끝냅니다.</p>
+      </details>
+
+      <details>
+        <summary>주행 기록</summary>
+        <p id="trip-current" class="hint mono"></p>
+        <ul id="trip-list" class="trips"></ul>
+        <button id="trip-clear" type="button" class="danger">기록 지우기</button>
+      </details>
+
+      <details>
+        <summary>지도 저장</summary>
+        <p class="hint">지나간 곳의 지도는 이 휴대폰에 저장되고, 길 안내를 시작하면 경로 전체를 미리 받습니다.</p>
+        <div class="row gap">
+          <button id="map-prefetch" type="button">주변 3 km 받기</button>
+          <button id="map-clear" type="button" class="danger">저장된 지도 지우기</button>
+        </div>
+      </details>
+
+      <details>
+        <summary>운전 설정</summary>
+        <label class="check"><input id="drive-auto" type="checkbox" /> 자동 운전 모드 (글래스 착용 중 이 속도 이상이면 시작)</label>
+        <label>자동 시작 속도 (km/h) <input id="drive-auto-kmh" type="number" min="5" max="80" /></label>
+        <label>Tmap API 키 (미입력 시 OSRM)
+          <input id="set-tmap-key" type="password" autocomplete="off" spellcheck="false" />
+        </label>
+        <label>야간 밝기
+          <select id="set-night">
+            <option value="auto">자동 (해 지면 어둡게)</option>
+            <option value="day">항상 밝게</option>
+            <option value="night">항상 어둡게</option>
+          </select>
+        </label>
+        <label>속도 단위
+          <select id="set-unit"><option value="kmh">km/h</option><option value="mph">mph</option></select>
+        </label>
+        <label>과속 경고 기준
+          <select id="set-tolerance">
+            <option value="0">제한속도 초과 즉시</option>
+            <option value="5">+5 km/h</option>
+            <option value="10">+10 km/h</option>
+          </select>
+        </label>
+        <label class="check"><input id="set-camera" type="checkbox" /> 단속 카메라 알림</label>
+        <label class="check"><input id="set-demo" type="checkbox" /> 데모 주행 (GPS 없이 테스트)</label>
+        <label class="check"><input id="set-drowsy" type="checkbox" /> 졸음 감지 (실험)</label>
+        <p id="drowsy-status" class="hint mono"></p>
+        <button id="drowsy-calibrate" type="button">졸음 감지 보정</button>
+        <p class="hint">
+          보정: 차를 세우고 정면을 본 채 누른 뒤 4초 안에 고개를 두 번 끄덕이세요. 제한속도·단속 카메라는 OpenStreetMap 기준이라
+          실제와 다를 수 있으니 항상 도로 표지판을 우선하고, 주행 중에는 휴대폰을 조작하지 마세요.
+        </p>
+      </details>
+    </section>
+
     <section class="panel">
-      <h2><span class="idx">03</span> TASK QUEUE <small>할 일</small></h2>
+      <h2><span class="idx">04</span> TASK QUEUE <small>할 일</small></h2>
       <p class="hint">한 줄에 하나씩. 맨 위 항목이 글래스에 표시되고, 글래스를 길게 누르면 완료됩니다.</p>
       <textarea id="todos" rows="4" placeholder="보고서 초안 작성&#10;PR 리뷰"></textarea>
       <div class="row gap">
@@ -48,7 +148,7 @@
     </section>
 
     <form id="settings" class="panel">
-      <h2><span class="idx">04</span> SYSTEM CONFIG <small>설정</small></h2>
+      <h2><span class="idx">05</span> SYSTEM CONFIG <small>설정</small></h2>
 
       <details open>
         <summary>화면</summary>
@@ -136,12 +236,13 @@
     </form>
 
     <section class="panel hint">
-      <h2><span class="idx">05</span> CONTROLS <small>글래스 조작</small></h2>
+      <h2><span class="idx">06</span> CONTROLS <small>글래스 조작</small></h2>
       <ul class="keys">
         <li><kbd>TAP</kbd> 뽀모도로가 끝났으면 다음 단계, 아니면 화면 모드 전환</li>
         <li><kbd>DOUBLE</kbd> 화면 숨기기/보이기</li>
         <li><kbd>HOLD</kbd> 지금 할 일 완료</li>
-        <li><kbd>MENU</kbd> 뽀모도로, 물 +1, 운동, 새로고침 등</li>
+        <li><kbd>MENU</kbd> 운전 모드, 뽀모도로, 물 +1, 운동, 새로고침 등</li>
+        <li><kbd>DRIVE</kbd> 운전 화면에서: 두 번 탭 또는 메뉴 "운전 모드 끝내기"로 상태 HUD 복귀</li>
       </ul>
     </section>
 

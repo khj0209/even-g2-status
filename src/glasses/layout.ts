@@ -103,10 +103,12 @@ export enum MenuId {
   Water = 5,
   CycleMode = 6,
   Refresh = 7,
+  Drive = 8,
 }
 
 /** Menu labels must be <= 32 UTF-8 bytes (Korean = 3 bytes/char). */
 export const MENU: MenuItem[] = [
+  { id: MenuId.Drive, label: '운전 모드' },
   { id: MenuId.TogglePomodoro, label: '뽀모도로 시작/정지' },
   { id: MenuId.CompleteTodo, label: '할 일 완료' },
   { id: MenuId.Water, label: '물 한 잔 +1' },

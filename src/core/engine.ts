@@ -36,6 +36,8 @@ export interface EngineOptions {
   manualTicks?: boolean;
   /** Draws HUD-theme images. Without it the HUD theme shows its text panels only. */
   renderer?: HudRenderer;
+  /** The wearer chose "운전 모드" in the glasses menu. */
+  onDriveRequest?: () => void;
 }
 
 const IMAGE_RETRY_MS = 60_000;
@@ -64,6 +66,8 @@ export class StatusEngine {
   private seenUrgent = new Set<string>();
   private toast: { text: string; until: number } | null = null;
   private foreground = true;
+  /** Another screen (driving mode) owns the glasses; keep state ticking but send nothing. */
+  private suspended = false;
   private blinking = false;
   private pushing: Promise<void> | null = null;
   private pendingLines: Record<LineName, RenderedLine> | null = null;
@@ -116,7 +120,29 @@ export class StatusEngine {
 
   /** Glasses are worn and our page is in the foreground. Unknown wear state counts as worn. */
   isActive(): boolean {
+    return !this.suspended && this.foreground && this.device.wearing !== false;
+  }
+
+  /** Glasses are worn (or unknown) and the app is in the foreground, regardless of who draws. */
+  isWorn(): boolean {
     return this.foreground && this.device.wearing !== false;
+  }
+
+  get isSuspended(): boolean {
+    return this.suspended;
+  }
+
+  /** Hand the glasses to another screen (driving mode). Pomodoro etc. keep running. */
+  suspend(): void {
+    this.suspended = true;
+  }
+
+  /** Take the glasses back: rebuild our page and redraw everything. */
+  async resume(): Promise<void> {
+    if (!this.suspended) return;
+    this.suspended = false;
+    await this.createPage();
+    await this.tick();
   }
 
   async applySettings(settings: Settings): Promise<void> {
@@ -375,6 +401,8 @@ export class StatusEngine {
   }
 
   async handleInput(action: InputAction): Promise<void> {
+    // While driving mode owns the glasses, its own handler gets the input.
+    if (this.suspended && action.type !== 'foreground') return;
     const now = this.now().getTime();
     switch (action.type) {
       case 'foreground':
@@ -431,6 +459,9 @@ export class StatusEngine {
         this.showToast(`물 ${this.state.daily.water}잔`);
         break;
       case MenuId.CycleMode: this.cycleMode(); break;
+      case MenuId.Drive:
+        this.opts.onDriveRequest?.();
+        break;
       case MenuId.Refresh:
         this.nextRefresh.clear();
         this.showToast('새로고침');

@@ -49,6 +49,8 @@ export interface Host {
   onInput(cb: (action: InputAction) => void): () => void;
   onDevice(cb: (state: DeviceState) => void): () => void;
   getLocation(): Promise<GeoPoint | null>;
+  /** Current GPS speed in m/s (high accuracy fix), or null if unknown. For driving detection. */
+  getSpeed(): Promise<number | null>;
   load(key: string): Promise<string | null>;
   save(key: string, value: string): Promise<void>;
 }
