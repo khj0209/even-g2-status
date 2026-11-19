@@ -330,10 +330,18 @@ describe('scripts/save-credentials.sh --check', () => {
     expect(r.args).toBe('api repos/me/repo/actions/secrets/public-key --silent');
   });
 
+  it('trims whitespace from a pasted token and reports its shape, never its value', () => {
+    const r = check(0, '  github_pat_ABCDEF123\n');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('fine-grained token, 20 chars'); // spaces and newline trimmed
+    expect(r.stdout).not.toContain('ABCDEF');
+  });
+
   it('fails early with the GitHub error when the token is bad or missing', () => {
     const bad = check(1);
     expect(bad.status).toBe(1);
     expect(bad.stderr).toContain('Bad credentials');
+    expect(bad.stderr).toContain('unrecognised format');
     expect(check(0, '').status).toBe(1);
   });
 });

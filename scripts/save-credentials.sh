@@ -12,6 +12,23 @@ FILE="${XDG_CONFIG_HOME:-$HOME/.config}/evenhub/credentials.yaml"
 GH=${GH_BIN:-gh}
 gha() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::$1 title=Even Hub credentials::$2"; else echo "$1: $2" >&2; fi; }
 
+# Pasted secrets often carry a trailing newline or spaces, which GitHub rejects as "Bad credentials".
+if [ -n "${GH_TOKEN:-}" ]; then
+  GH_TOKEN=$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')
+  export GH_TOKEN
+fi
+
+# Describe the token's shape without revealing it (fixed prefix + length only).
+token_shape() {
+  local t=$GH_TOKEN
+  case "$t" in
+    github_pat_*) echo "fine-grained token, ${#t} chars" ;;
+    ghp_*) echo "classic token, ${#t} chars" ;;
+    gh[osur]_*) echo "not a personal access token (prefix ${t:0:4}), ${#t} chars" ;;
+    *) echo "unrecognised format (expected github_pat_...), ${#t} chars" ;;
+  esac
+}
+
 # --check: verify the writer token BEFORE any Even Hub call. Every Even Hub
 # command may rotate the refresh token; if we couldn't save the new one, the
 # stored session would die. Failing here leaves the session untouched.
@@ -21,10 +38,10 @@ if [ "${1:-}" = "--check" ]; then
     exit 1
   fi
   if ! "$GH" api "repos/$GITHUB_REPOSITORY/actions/secrets/public-key" --silent 2>/tmp/gh-check.err; then
-    gha error "EVENHUB_SECRET_WRITER_TOKEN can't write secrets ($(head -c 200 /tmp/gh-check.err | tr '\n' ' ')). Regenerate a fine-grained token for this repository with 'Secrets: Read and write' and update the secret. Stopping before touching the Even Hub session, so it stays valid."
+    gha error "EVENHUB_SECRET_WRITER_TOKEN can't write secrets ($(head -c 200 /tmp/gh-check.err | tr '\n' ' '); stored value looks like: $(token_shape)). Regenerate a fine-grained token for this repository with 'Secrets: Read and write' and update the secret. Stopping before touching the Even Hub session, so it stays valid."
     exit 1
   fi
-  echo "Secret writer token OK."
+  echo "Secret writer token OK ($(token_shape))."
   exit 0
 fi
 
