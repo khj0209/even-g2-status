@@ -73,13 +73,54 @@ Even App WebView 안에서는 자동으로 실제 SDK 브리지를 씁니다.
 2. `npm run dev` 실행 후 다른 터미널에서 `npm run qr`
 3. Even App으로 QR 스캔
 
-### 패키징 / 배포
+### 수동 패키징
 
 ```bash
-npm run pack                        # → g2-status.ehpk
-npx -p @evenrealities/evenhub-cli evenhub login
-npx -p @evenrealities/evenhub-cli evenhub create g2-status.ehpk --name "G2 Status" --tagline "하루 종일 켜두는 상태표시창"
+npm run pack      # → g2-status.ehpk
 ```
+
+## 자동 배포 (GitHub Actions)
+
+| 워크플로 | 언제 | 하는 일 |
+|---|---|---|
+| `CI` | 모든 push / PR | 버전 일치 확인 → 타입체크 → 테스트 → 빌드 → `.ehpk` 패키징 → 아티팩트 업로드 |
+| `Release` | `v*.*.*` 태그 push (또는 수동 실행) | 위 검사 전부 → Even Hub 업로드 (첫 배포면 앱 생성) → beta 채널 지정 → GitHub Release에 `.ehpk` 첨부 |
+
+### 1회 설정
+
+`evenhub login`은 비밀번호를 대화형으로 묻기 때문에 CI에서 직접 로그인할 수 없습니다.
+그래서 **내 컴퓨터에서 로그인한 자격 증명을 GitHub Secret으로 넘깁니다.**
+
+```bash
+npx evenhub login                 # 내 컴퓨터에서 한 번
+npm run credentials --silent      # base64 한 줄 출력
+```
+
+1. GitHub 저장소 → Settings → Secrets and variables → Actions → **New repository secret**
+   - 이름 `EVENHUB_CREDENTIALS_B64`, 값은 위에서 출력된 한 줄
+   - `gh` CLI가 있다면: `npm run credentials --silent | gh secret set EVENHUB_CREDENTIALS_B64`
+2. (선택) Settings → Environments → `evenhub` 환경에 **Required reviewers**를 걸면 업로드마다 승인 후 진행됩니다.
+3. (선택) Actions **Variables**
+   - `EVENHUB_BETA` = `false`: beta 채널 지정 생략
+   - `EVENHUB_TAGLINE`: 첫 배포 시 스토어 한 줄 소개 (기본: "하루 종일 켜두는 상태표시창")
+
+이 secret은 내 Even Hub 계정에 업로드할 수 있는 권한이니 비밀번호처럼 다루세요.
+리프레시 토큰 만료 14일 전부터 워크플로에 경고가 뜨고, 만료되면 재로그인 안내와 함께 실패합니다.
+그때 위 두 줄을 다시 실행해 secret을 갱신하면 됩니다.
+
+### 릴리스하기
+
+```bash
+npm version patch          # package.json + app.json 버전 올리고 커밋 + v0.1.1 태그
+git push --follow-tags     # → Release 워크플로 실행
+```
+
+- 릴리스 노트(=Even Hub 변경 내역, 최대 500자)는 지난 태그 이후 커밋 제목으로 자동 생성됩니다.
+  직접 쓰고 싶으면 `git tag -a v0.2.0 -m "변경 내용"`처럼 메시지 있는 태그를 쓰세요.
+- 같은 버전으로 다시 실행해도 안전합니다 (이미 업로드된 버전은 건너뜀). 실패하면 Actions에서 **Re-run** 하면 됩니다.
+- 스토어 소개문은 `store/description.md`, 아이콘은 `store/icon.png`(24×24 PNG, 지금은 임시 아이콘)입니다.
+- **공개(public) 배포는 Even 심사가 필요해서 CLI로 자동화할 수 없습니다.** beta에서 확인한 뒤 Even Hub 개발자
+  포털에서 심사를 요청하세요. 베타 테스터는 `npx evenhub testers add 이메일`로 초대합니다.
 
 ## 구조
 
@@ -91,6 +132,9 @@ src/
   glasses/     3줄 컨테이너 배치, 메뉴 정의
   platform/    Host 인터페이스: evenHost(실제 SDK) / previewHost(브라우저)
   ui/          폰 설정 화면
+scripts/       버전 동기화, 릴리스 노트, 자격 증명 복원, Even Hub 업로드 (publish.sh)
+store/         스토어 소개문, 아이콘
+.github/       CI / Release 워크플로
 ```
 
 새 위젯 추가: `src/widgets/`에 `Widget`을 만들고 → `widgets/index.ts`에 등록 → `WidgetId` 타입에 id 추가 →

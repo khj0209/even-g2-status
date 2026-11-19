@@ -1,0 +1,101 @@
+name: Release
+
+# Push a version tag to build, test, pack, upload to Even Hub, put the build on
+# the beta channel and create a GitHub Release:
+#
+#   npm version patch        # bumps package.json + app.json, commits, tags vX.Y.Z
+#   git push --follow-tags
+#
+# Public publishing needs Even's review and is requested in the developer portal.
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      beta:
+        description: 'Even Hub beta 채널에 올리기'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write # create the GitHub Release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Optional: add required reviewers to this environment in repo settings
+    # to approve each upload manually.
+    environment: evenhub
+    env:
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # release notes need previous tags
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check versions
+        run: node scripts/version.mjs check "$TAG"
+
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Pack .ehpk
+        id: pack
+        run: |
+          VERSION=$(node scripts/version.mjs get)
+          FILE="g2-status-${VERSION}.ehpk"
+          npx --no-install evenhub pack app.json dist -o "$FILE"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Release notes
+        run: node scripts/release-notes.mjs "${TAG:-v${{ steps.pack.outputs.version }}}" release-notes.md
+
+      - name: Restore Even Hub credentials
+        env:
+          EVENHUB_CREDENTIALS_B64: ${{ secrets.EVENHUB_CREDENTIALS_B64 }}
+        run: node scripts/restore-credentials.mjs
+
+      - name: Upload to Even Hub
+        env:
+          # format() turns the boolean input into the string 'true'/'false' so `false` isn't swallowed by ||.
+          EVENHUB_BETA: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.beta) || vars.EVENHUB_BETA || 'true' }}
+          EVENHUB_TAGLINE: ${{ vars.EVENHUB_TAGLINE }}
+        run: bash scripts/publish.sh "${{ steps.pack.outputs.file }}" "${{ steps.pack.outputs.version }}" release-notes.md
+
+      - name: GitHub Release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${{ steps.pack.outputs.file }}" --clobber
+          else
+            gh release create "$TAG" "${{ steps.pack.outputs.file }}" \
+              --title "G2 Status ${{ steps.pack.outputs.version }}" --notes-file release-notes.md
+          fi
+
+      - name: Remove credentials
+        if: always()
+        run: rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/evenhub"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: g2-status-${{ steps.pack.outputs.version }}
+          path: ${{ steps.pack.outputs.file }}
+          if-no-files-found: ignore
