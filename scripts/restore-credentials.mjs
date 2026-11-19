@@ -6,7 +6,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { jwtExpiry, readYamlField } from './release-lib.mjs';
+import { jwtClaims, jwtExpiry, readYamlField } from './release-lib.mjs';
 
 const WARN_DAYS = 14;
 const gh = !!process.env.GITHUB_ACTIONS;
@@ -23,6 +23,19 @@ const refresh = readYamlField(yaml, 'refresh_token');
 if (!refresh || !readYamlField(yaml, 'access_token')) {
   error('EVENHUB_CREDENTIALS_B64 does not decode to a valid credentials.yaml (missing tokens).');
   process.exit(1);
+}
+
+// Diagnostics (no secrets): when were these tokens issued? Helps tell a stale
+// secret apart from a session the server revoked.
+for (const [name, tok] of [['access', readYamlField(yaml, 'access_token')], ['refresh', refresh]]) {
+  const c = jwtClaims(tok);
+  if (!c) continue;
+  const fmt = (t) => {
+    if (typeof t !== 'number') return 'n/a';
+    const min = Math.round((t * 1000 - Date.now()) / 60000);
+    return `${new Date(t * 1000).toISOString()} (${min >= 0 ? `in ${min} min` : `${-min} min ago`})`;
+  };
+  console.log(`${name} token: issued ${fmt(c.iat)}, expires ${fmt(c.exp)}`);
 }
 
 const exp = jwtExpiry(refresh);

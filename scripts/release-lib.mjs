@@ -37,16 +37,22 @@ export function readYamlField(yaml, key) {
   return m ? m[1].replace(/^(['"])(.*)\1$/, '$2') : null;
 }
 
-/** Seconds-since-epoch `exp` claim of a JWT, or null if it isn't one. */
-export function jwtExpiry(token) {
+/** Decoded JWT payload, or null if the token isn't a JWT. */
+export function jwtClaims(token) {
   const parts = String(token ?? '').split('.');
   if (parts.length !== 3) return null;
   try {
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-    return typeof payload.exp === 'number' ? payload.exp : null;
+    return payload && typeof payload === 'object' ? payload : null;
   } catch {
     return null;
   }
+}
+
+/** Seconds-since-epoch `exp` claim of a JWT, or null if it isn't one. */
+export function jwtExpiry(token) {
+  const exp = jwtClaims(token)?.exp;
+  return typeof exp === 'number' ? exp : null;
 }
 
 /**

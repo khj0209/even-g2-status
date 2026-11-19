@@ -78,6 +78,8 @@ jobs:
           # format() turns the boolean input into the string 'true'/'false' so `false` isn't swallowed by ||.
           EVENHUB_BETA: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.beta) || vars.EVENHUB_BETA || 'true' }}
           EVENHUB_TAGLINE: ${{ vars.EVENHUB_TAGLINE }}
+          # Logs method, path, HTTP status and API code per request (no tokens).
+          EVENHUB_API_DEBUG: '1'
         run: bash scripts/publish.sh "${{ steps.pack.outputs.file }}" "${{ steps.pack.outputs.version }}" release-notes.md
 
       # The CLI rotates the refresh token when it refreshes; store the new one
