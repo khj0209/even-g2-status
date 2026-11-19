@@ -337,6 +337,12 @@ describe('scripts/save-credentials.sh --check', () => {
     expect(r.stdout).not.toContain('ABCDEF');
   });
 
+  it('recognises the Even Hub login pasted into the wrong secret', () => {
+    const r = check(1, Buffer.from('access_token: a\nrefresh_token: b\n').toString('base64'));
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('belongs in EVENHUB_CREDENTIALS_B64');
+  });
+
   it('fails early with the GitHub error when the token is bad or missing', () => {
     const bad = check(1);
     expect(bad.status).toBe(1);

@@ -25,7 +25,13 @@ token_shape() {
     github_pat_*) echo "fine-grained token, ${#t} chars" ;;
     ghp_*) echo "classic token, ${#t} chars" ;;
     gh[osur]_*) echo "not a personal access token (prefix ${t:0:4}), ${#t} chars" ;;
-    *) echo "unrecognised format (expected github_pat_...), ${#t} chars" ;;
+    *)
+      # A common mix-up: pasting the Even Hub login (ci-login output) into this secret.
+      if printf '%s' "$t" | base64 -d 2>/dev/null | grep -q 'refresh_token'; then
+        echo "the Even Hub login from ci-login (that belongs in EVENHUB_CREDENTIALS_B64), not a GitHub token"
+      else
+        echo "unrecognised format (expected github_pat_...), ${#t} chars"
+      fi ;;
   esac
 }
 
