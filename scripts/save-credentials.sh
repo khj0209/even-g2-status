@@ -17,8 +17,23 @@ if [ ! -f "$FILE" ]; then
   exit 0
 fi
 
-if cmp -s "$FILE" <(printf '%s' "${EVENHUB_CREDENTIALS_B64:-}" | base64 -d 2>/dev/null); then
-  echo "Credentials unchanged; secret is up to date."
+# Compare the tokens themselves (not file bytes) so a reformatted file isn't a false alarm.
+LIB="$(cd "$(dirname "$0")" && pwd)/release-lib.mjs"
+tokens() {
+  node --input-type=module -e '
+    import { readFileSync } from "node:fs";
+    const { readYamlField } = await import(process.argv[1]);
+    const y = readFileSync(0, "utf8");
+    const a = readYamlField(y, "access_token"), r = readYamlField(y, "refresh_token");
+    if (!a || !r) process.exit(1);
+    console.log(a + " " + r);
+  ' "$LIB"
+}
+NOW=$(tokens < "$FILE" || true)
+BEFORE=$(printf '%s' "${EVENHUB_CREDENTIALS_B64:-}" | base64 -d 2>/dev/null | tokens 2>/dev/null || true)
+# If either side can't be parsed, assume it changed (saving is safe; skipping is not).
+if [ -n "$NOW" ] && [ "$NOW" = "$BEFORE" ]; then
+  echo "Tokens unchanged; secret is up to date."
   exit 0
 fi
 

@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain .mjs helper without type declarations
-import { checkVersions, jwtExpiry, notesFromCommits, readYamlField, truncateNotes } from '../scripts/release-lib.mjs';
+import { checkVersions, decodePng, jwtExpiry, notesFromCommits, readYamlField, truncateNotes, validateIcon } from '../scripts/release-lib.mjs';
+import { deflateSync } from 'node:zlib';
 
 describe('release helpers', () => {
   it('checks tag / package.json / app.json agreement', () => {
@@ -180,20 +181,32 @@ describe('scripts/save-credentials.sh', () => {
   }
 
   it('does nothing when the tokens were not refreshed', () => {
-    const r = setup('refresh_token: a\n', 'refresh_token: a\n');
+    const r = setup('access_token: x\nrefresh_token: a\n', 'access_token: x\nrefresh_token: a\n');
     expect(r.status).toBe(0);
     expect(r.args).toBeNull();
   });
 
+  it('ignores formatting differences when the tokens are the same', () => {
+    const r = setup('email: me@example.com\naccess_token: "x"\nrefresh_token: "a"\n', 'refresh_token: a\naccess_token: x\n');
+    expect(r.status).toBe(0);
+    expect(r.args).toBeNull();
+  });
+
+  it('saves when the stored secret cannot be parsed (safe default)', () => {
+    const r = setup('access_token: x\nrefresh_token: a\n', 'garbage');
+    expect(r.status).toBe(0);
+    expect(r.args).not.toBeNull();
+  });
+
   it('writes rotated tokens back via stdin, never argv', () => {
-    const r = setup('refresh_token: NEW\n', 'refresh_token: old\n');
+    const r = setup('access_token: x2\nrefresh_token: NEW\n', 'access_token: x\nrefresh_token: old\n');
     expect(r.status).toBe(0);
     expect(r.args!.trim()).toBe('secret set EVENHUB_CREDENTIALS_B64 --repo me/repo');
-    expect(Buffer.from(r.stdin!, 'base64').toString()).toBe('refresh_token: NEW\n');
+    expect(Buffer.from(r.stdin!, 'base64').toString()).toBe('access_token: x2\nrefresh_token: NEW\n');
   });
 
   it('fails loudly if tokens rotated but no writer token is configured', () => {
-    const r = setup('refresh_token: NEW\n', 'refresh_token: old\n', false);
+    const r = setup('access_token: x2\nrefresh_token: NEW\n', 'access_token: x\nrefresh_token: old\n', false);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('EVENHUB_SECRET_WRITER_TOKEN');
   });
@@ -231,5 +244,46 @@ describe('scripts/ci-login.mjs', () => {
     expect(usedHome).not.toBe(realHome);
     expect(existsSync(usedHome)).toBe(false); // temporary copy removed
     expect(existsSync(join(realHome, 'evenhub'))).toBe(false); // real config untouched
+  });
+});
+
+describe('store icon validation (mirrors evenhub create --icon)', () => {
+  /** Build a 24x24 RGBA PNG; `pixel(x, y)` returns [r, g, b, a]. */
+  function png(pixel: (x: number, y: number) => number[], filter = 0): Buffer {
+    const rows: number[] = [];
+    for (let y = 0; y < 24; y++) {
+      rows.push(filter);
+      const line = Array.from({ length: 24 }, (_, x) => pixel(x, y)).flat();
+      // Filter 1 (Sub): store the difference from the pixel to the left.
+      rows.push(...line.map((v, i) => (filter === 1 && i >= 4 ? (v - line[i - 4] + 256) & 255 : v)));
+    }
+    const chunk = (type: string, data: Buffer) => {
+      const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+      return Buffer.concat([len, Buffer.from(type), data, Buffer.alloc(4)]); // CRC not checked by our decoder
+    };
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(24, 0); ihdr.writeUInt32BE(24, 4); ihdr[8] = 8; ihdr[9] = 6;
+    return Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      chunk('IHDR', ihdr), chunk('IDAT', deflateSync(Buffer.from(rows))), chunk('IEND', Buffer.alloc(0)),
+    ]);
+  }
+  const INK = [0xf4, 0xf4, 0xf4, 255];
+  const CLEAR = [0, 0, 0, 0];
+
+  it('accepts the committed store icon', () => {
+    expect(validateIcon(decodePng(readFileSync(join(root, 'store/icon.png'))))).toEqual([]);
+  });
+
+  it('accepts 2x2-aligned ink on transparency, with any PNG filter', () => {
+    const ok = (x: number, y: number) => (x >= 2 && x < 6 && y >= 4 && y < 6 ? INK : CLEAR);
+    expect(validateIcon(decodePng(png(ok)))).toEqual([]);
+    expect(validateIcon(decodePng(png(ok, 1)))).toEqual([]);
+  });
+
+  it('rejects wrong colours, partial alpha and broken 2x2 blocks', () => {
+    expect(validateIcon(decodePng(png(() => [0, 0, 0, 255])))[0]).toMatch(/pixel \(0, 0\) is #000000/);
+    expect(validateIcon(decodePng(png((x, y) => (x < 2 && y < 2 ? [0xf4, 0xf4, 0xf4, 128] : CLEAR))))[0]).toMatch(/alpha 128/);
+    expect(validateIcon(decodePng(png((x, y) => (x === 1 && y < 2 ? INK : CLEAR))))[0]).toMatch(/2x2 block/);
+    expect(validateIcon(decodePng(png((x, y) => (x >= 1 && x < 3 && y < 2 ? INK : CLEAR))))).toEqual([]); // odd offset is fine if the block is whole
   });
 });
