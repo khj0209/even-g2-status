@@ -85,6 +85,7 @@ npm run pack      # → g2-status.ehpk
 |---|---|---|
 | `CI` | 모든 push / PR | 버전 일치 확인 → 타입체크 → 테스트 → 빌드 → `.ehpk` 패키징 → 아티팩트 업로드 |
 | `Release` | `v*.*.*` 태그 push (또는 수동 실행) | 위 검사 전부 → Even Hub 업로드 (첫 배포면 앱 생성) → beta 채널 지정 → GitHub Release에 `.ehpk` 첨부 |
+| `Even Hub session keep-alive` | 매일 03:17 KST (또는 수동 실행) | CI 전용 Even Hub 세션을 갱신하고 새 토큰을 secret에 저장 |
 
 ### 1회 설정
 
@@ -112,8 +113,12 @@ npm run pack      # → g2-status.ehpk
    - `EVENHUB_BETA` = `false`: beta 채널 지정 생략
    - `EVENHUB_TAGLINE`: 첫 배포 시 스토어 한 줄 소개 (기본: "하루 종일 켜두는 상태표시창")
 
-릴리스는 한 번에 하나씩만 돌도록 되어 있어(concurrency) CI 안에서 토큰 갱신이 겹치지 않습니다.
-refresh token 만료 14일 전부터 경고가 뜨고, 만료되거나 세션이 끊기면 `npm run ci-login -- --set` 안내와 함께 실패합니다.
+**세션 유지 (keep-alive)**: Even Hub 토큰은 access 약 10분, refresh 약 7일짜리이고 갱신할 때마다 refresh token이 바뀝니다.
+`Even Hub session keep-alive` 워크플로가 매일(03:17 KST) 세션을 갱신하고 새 토큰을 secret에 다시 저장하므로,
+릴리스가 한동안 없어도 세션이 끊기지 않습니다. 실패하면 GitHub이 메일로 알려주고, 그때 `npm run ci-login -- --set`을 다시 하면 됩니다.
+릴리스와 keep-alive는 같은 concurrency 그룹이라 토큰 갱신이 겹치지 않습니다.
+
+`npm run ci-login -- --set`은 **이 저장소의 git remote를 읽어 그 저장소에만** secret을 저장하고, 저장 후 갱신 시각을 보여줍니다.
 
 ### 릴리스하기
 
